@@ -1,215 +1,126 @@
-import { useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { invoke } from "@tauri-apps/api/core";
-import {
-  LayoutDashboard,
-  Zap,
-  ArrowUpRight,
-  Download,
-  Wallet,
-  ShieldCheck,
-  Vote,
-  History,
-  Settings,
-  LogOut,
-  ChevronLeft,
-  ChevronRight,
-  Wifi,
-} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
+import { toast } from "sonner";
+import { Wallet as WalletNavigationIcon, ArrowLeft, ArrowUpRight, ArrowDownLeft, ShieldCheck, Vote, History, Settings, LockKeyhole, Ellipsis, Wifi } from "lucide-react";
+import { WalletIcon, TrstIcon } from "@/components/burst-icons";
 import { cn, truncateAddress } from "@/lib/utils";
-import { useWallet } from "@/hooks/use-wallet";
+import { useWallet, useRpc } from "@/hooks/use-wallet";
+import { useAutomation } from "@/hooks/use-automation";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
+import { AppearanceToggle } from "@/components/appearance-toggle";
+import { PageBoundary } from "@/components/page-boundary";
+import { RevocationNotice } from "@/components/revocation-notice";
+import type { AccountInfo } from "@/lib/types";
+import { viewOnlyPaths } from "@/lib/wallet-access";
 
-const navItems = [
-  { to: "/", icon: LayoutDashboard, label: "Dashboard", desc: "Overview" },
-  { to: "/pay", icon: Zap, label: "Pay", desc: "Burn BRN to pay" },
-  { to: "/transfer", icon: ArrowUpRight, label: "Transfer", desc: "Send TRST" },
-  { to: "/receive", icon: Download, label: "Receive", desc: "Receive TRST" },
-  { to: "/portfolio", icon: Wallet, label: "Portfolio", desc: "TRST batches" },
-  { to: "/verification", icon: ShieldCheck, label: "Verification", desc: "Identity" },
-  { to: "/governance", icon: Vote, label: "Governance", desc: "Vote & delegate" },
-  { to: "/history", icon: History, label: "History", desc: "Transactions" },
-  { to: "/settings", icon: Settings, label: "Settings", desc: "Configure" },
+const destinations = [
+  { to: "/", icon: WalletNavigationIcon, label: "Wallet", group: "everyday" },
+  { to: "/history", icon: History, label: "Activity", group: "everyday" },
+  { to: "/portfolio", icon: TrstIcon, label: "TRST", group: "everyday" },
+  { to: "/verification", icon: ShieldCheck, label: "Verification", group: "community" },
+  { to: "/governance", icon: Vote, label: "Governance", group: "community" },
+  { to: "/pay", icon: ArrowUpRight, label: "Pay", group: "payments" },
+  { to: "/transfer", icon: ArrowUpRight, label: "Transfer", group: "payments" },
+  { to: "/receive", icon: ArrowDownLeft, label: "Receive", group: "payments" },
+  { to: "/settings", icon: Settings, label: "Settings", group: "settings" },
 ];
 
-function verificationBadgeVariant(state: string) {
-  switch (state) {
-    case "Verified":
-      return "bg-success/15 text-success border-success/30";
-    case "Endorsed":
-    case "Voting":
-      return "bg-warning/15 text-warning border-warning/30";
-    case "Revoked":
-    case "Challenged":
-      return "bg-destructive/15 text-destructive border-destructive/30";
-    default:
-      return "bg-muted text-muted-foreground border-border";
-  }
-}
-
 export default function Layout() {
-  const [collapsed, setCollapsed] = useState(false);
-  const { address, verificationState, setAddress, setLocked, setVerificationState } = useWallet();
+  const automationError = useAutomation();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { address, rpcUrl, isLocking, lockWallet, watchOnly } = useWallet();
+  const account = useRpc<AccountInfo>("get_account_info", {rpcUrl, expectedAccount: address}, 10_000);
+  const verificationState = account.error ? "Status unavailable"
+    : account.data?.address === address && account.data?.verification_state
+      ? account.data.verification_state[0].toUpperCase() + account.data.verification_state.slice(1).toLowerCase()
+      : "Checking verification…";
+  const { data: node, error: nodeError } = useRpc<{ network?: string; faucet_enabled?: boolean }>("get_node_info", { rpcUrl }, 10_000);
   const navigate = useNavigate();
+  const location = useLocation();
+  const mainRef = useRef<HTMLElement>(null);
+  const menuNavigated = useRef(false);
+  const previousPath = useRef(location.pathname);
+  const pageTitle = location.pathname === "/pay/offline" ? "Offline payment" : destinations.find(item => item.to === location.pathname)?.label ?? "Wallet";
+  const isPayment = ["/pay", "/pay/offline", "/transfer", "/receive"].includes(location.pathname);
+
+  useEffect(() => {
+    if (previousPath.current !== location.pathname) {
+      mainRef.current?.scrollTo(0, 0);
+      mainRef.current?.focus();
+      previousPath.current = location.pathname;
+    }
+  }, [location.pathname]);
 
   async function handleLock() {
     try {
-      await invoke("lock_wallet");
-    } catch {
-      // already locked
+      if (await lockWallet()) navigate("/onboarding");
+    } catch (error) {
+      toast.error("Wallet could not be locked", { description: String(error) });
     }
-    setLocked(true);
-    setAddress(null);
-    setVerificationState("Unverified");
-    navigate("/onboarding");
+  }
+
+  function link(item: typeof destinations[number], close = false) {
+    if (watchOnly && !viewOnlyPaths.has(item.to)) return null;
+    const Icon = item.icon;
+    return <NavLink key={item.to} to={item.to} end={item.to === "/"} onClick={() => { if (close) { menuNavigated.current = true; setMenuOpen(false); } }} className="nav-item" aria-label={item.label}>
+      <Icon aria-hidden="true" className="size-[18px] shrink-0" /><span>{item.label}</span>
+    </NavLink>;
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <aside
-        className={cn(
-          "flex flex-col border-r border-sidebar-border bg-sidebar/80 backdrop-blur-lg text-sidebar-foreground transition-all duration-300",
-          collapsed ? "w-16" : "w-60",
-        )}
-      >
-        <div className="flex items-center gap-2 px-4 py-4">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/15 animate-glow-ring">
-            <Zap className="h-4 w-4 text-primary" />
-          </div>
-          {!collapsed && (
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-bold tracking-wide gradient-text">BURST</p>
-              {address && (
-                <div className="flex items-center gap-1.5">
-                  <p className="truncate font-mono text-[10px] text-muted-foreground">
-                    {truncateAddress(address)}
-                  </p>
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      "h-4 px-1 text-[9px] font-medium leading-none",
-                      verificationBadgeVariant(verificationState),
-                    )}
-                  >
-                    {verificationState}
-                  </Badge>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <Separator />
-
-        <ScrollArea className="flex-1 py-2">
-          <nav className="flex flex-col gap-0.5 px-2">
-            {navItems.map(({ to, icon: Icon, label, desc }) => (
-              <Tooltip key={to}>
-                <TooltipTrigger asChild>
-                  <NavLink
-                    to={to}
-                    end={to === "/"}
-                    className={({ isActive }) =>
-                      cn(
-                        "group relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all duration-200 hover:bg-accent hover:text-accent-foreground",
-                        isActive
-                          ? "bg-accent text-primary"
-                          : "text-muted-foreground",
-                        collapsed && "justify-center px-0",
-                      )
-                    }
-                  >
-                    {({ isActive }) => (
-                      <>
-                        {isActive && (
-                          <div className="absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-r-full bg-gradient-to-b from-primary to-primary/60" />
-                        )}
-                        <Icon className="h-4 w-4 shrink-0" />
-                        {!collapsed && (
-                          <div className="min-w-0 flex-1">
-                            <span>{label}</span>
-                            <p className="text-[10px] font-normal text-muted-foreground">
-                              {desc}
-                            </p>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </NavLink>
-                </TooltipTrigger>
-                {collapsed && (
-                  <TooltipContent side="right">{label}</TooltipContent>
-                )}
-              </Tooltip>
-            ))}
-          </nav>
-        </ScrollArea>
-
-        <Separator />
-
-        <div className="flex flex-col gap-1 p-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size={collapsed ? "icon" : "default"}
-                className={cn(
-                  "text-muted-foreground hover:text-destructive",
-                  !collapsed && "justify-start gap-3",
-                )}
-                onClick={handleLock}
-              >
-                <LogOut className="h-4 w-4 shrink-0" />
-                {!collapsed && <span>Lock Wallet</span>}
-              </Button>
-            </TooltipTrigger>
-            {collapsed && (
-              <TooltipContent side="right">Lock Wallet</TooltipContent>
-            )}
-          </Tooltip>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            className="self-end text-muted-foreground"
-            onClick={() => setCollapsed(!collapsed)}
-          >
-            {collapsed ? (
-              <ChevronRight className="h-4 w-4" />
-            ) : (
-              <ChevronLeft className="h-4 w-4" />
-            )}
-          </Button>
+    <div className="app-shell">
+      <a className="skip-link" href="#main-content">Skip to content</a>
+      <aside className="app-sidebar">
+        <NavLink to="/" className="brand-lockup" aria-label="Burst wallet home"><WalletIcon className="size-6" /><span className="brand-wordmark">burst<span className="brand-product">Wallet</span></span></NavLink>
+        <nav aria-label="Wallet navigation" className="sidebar-navigation">
+          <div className="nav-group">{destinations.filter(item => item.group === "everyday").map(item => link(item))}</div>
+          {!watchOnly && <div className="nav-group"><p className="nav-group-label">Community</p>{destinations.filter(item => item.group === "community").map(item => link(item))}</div>}
+        </nav>
+        <div className="sidebar-footer">
+          {link(destinations[8])}
+          <button className="nav-item w-full" onClick={handleLock} disabled={isLocking} aria-busy={isLocking}><LockKeyhole aria-hidden="true" className="size-[18px]" /><span>{isLocking ? "Locking…" : "Lock wallet"}</span></button>
+          <div className="wallet-identity"><span className="identity-dot" /><div className="min-w-0"><p className="truncate" title={address ?? undefined}>{address ? truncateAddress(address) : "Your wallet"}</p><p className="text-caption text-muted-foreground">{verificationState}</p></div></div>
         </div>
       </aside>
-
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <main className="flex-1 overflow-auto">
-          <div className="mx-auto max-w-5xl p-6">
-            <Outlet />
+      <div className="app-workspace">
+        <header className="app-header">
+          <div className="flex min-w-0 items-center gap-2">
+            <WalletIcon className="mobile-brand size-6" />
+            {isPayment && <Button variant="ghost" size="icon" aria-label="Back to wallet" onClick={() => navigate("/")}><ArrowLeft /></Button>}
+            <span className={cn("text-ui text-muted-foreground", !isPayment && "mobile-page-title")}>{pageTitle}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="connection-state" title={rpcUrl}><Wifi aria-hidden="true" className={cn("size-3.5", nodeError && "text-warning")} /><span>{nodeError ? "Offline" : node ? "Connected" : "Connecting…"}</span></span>
+            <AppearanceToggle />
+          </div>
+        </header>
+        <main ref={mainRef} id="main-content" tabIndex={-1}>
+          <div className="app-content">
+            <div role="status" className="network-notice">
+              {nodeError ? "Network unavailable. Check your node connection." : !node ? "Checking network…" : node.network === "dev" || node.network === "test"
+                ? (node.network === "dev" ? "Devnet" : "Testnet") + " · Test funds only, no real value."
+                : node.network === "live" ? "Mainnet · Real transactions. Test tools are unavailable."
+                  : "Network unknown. Do not assume this is mainnet."}
+              {node && (node.network === "dev" || node.network === "test") && <span className="network-detail">{node.faucet_enabled ? "Test faucet enabled." : "Test faucet disabled."}</span>}
+            </div>
+            {watchOnly && <p role="status" className="mb-4 text-caption text-muted-foreground">View only · Opened by address. Signing is unavailable.</p>}
+            {address && <RevocationNotice key={JSON.stringify([rpcUrl, address])} rpcUrl={rpcUrl} address={address} />}
+            <PageBoundary key={location.pathname}><Outlet /></PageBoundary>
           </div>
         </main>
-
-        {!collapsed && address && (
-          <footer className="flex items-center justify-between border-t border-border/50 bg-card/30 backdrop-blur-sm px-6 py-2">
-            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-              <Wifi className="h-3 w-3 text-success" />
-              <span>Connected</span>
-            </div>
-            <p className="font-mono text-[11px] text-muted-foreground">
-              {truncateAddress(address)}
-            </p>
-            <span className="text-[11px] text-muted-foreground">v0.1.0</span>
-          </footer>
-        )}
+        {automationError && <div role="status" className="automation-notice" title={automationError}>Wallet automation paused. Check your connection and pending payments.</div>}
+        <nav className="mobile-navigation" aria-label="Mobile wallet navigation">
+          {link(destinations[0])}{link(destinations[1])}{link(destinations[watchOnly ? 2 : 7])}
+          <Dialog open={menuOpen} onOpenChange={setMenuOpen}>
+            <DialogTrigger asChild><button className="nav-item" aria-label="More"><Ellipsis aria-hidden="true" className="size-5" /><span>More</span></button></DialogTrigger>
+            <DialogContent className="navigation-dialog" onCloseAutoFocus={event => { if (menuNavigated.current) { event.preventDefault(); menuNavigated.current = false; mainRef.current?.focus(); } }}>
+              <DialogHeader><DialogTitle>Your wallet</DialogTitle><DialogDescription>Payments, community, and settings.</DialogDescription></DialogHeader>
+              <nav aria-label="All wallet destinations" className="grid grid-cols-2 gap-2">{destinations.filter(item => item.to !== "/" && item.to !== "/history").map(item => link(item, true))}</nav>
+              <Button variant="secondary" onClick={handleLock} disabled={isLocking} aria-busy={isLocking}><LockKeyhole />{isLocking ? "Locking…" : "Lock wallet"}</Button>
+            </DialogContent>
+          </Dialog>
+        </nav>
       </div>
     </div>
   );

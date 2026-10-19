@@ -5,3 +5,11 @@ target/
 *.swo
 *~
 .env
+.env.*
+!.env.example
+!.env.sample
+*.tsbuildinfo
+*.seed
+*.pem
+*.p12
+*.pfx

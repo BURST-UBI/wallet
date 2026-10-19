@@ -1,11 +1,8 @@
-import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { toast } from "sonner";
-import { ArrowUpRight, Loader2, Info } from "lucide-react";
+import { useRef, useState } from "react";
+import { ArrowUpRight, Loader2 } from "lucide-react";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -22,151 +19,156 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useWallet, useRpc } from "@/hooks/use-wallet";
 import { formatAmount } from "@/lib/utils";
-import type { TrstBalance, BlockResult } from "@/lib/types";
+import { parseAmount } from "@/lib/brn";
+import type { TrstPortfolio } from "@/lib/types";
+
+import { useTransaction } from "@/hooks/use-transaction";
+import { TransactionReceipt } from "@/components/transaction-receipt";
+import { OfflineActionButton } from "@/components/offline-action-button";
 
 export default function TransferPage() {
-  const { rpcUrl } = useWallet();
+  const { rpcUrl, address } = useWallet();
+  const reviewContext = useRef({ rpcUrl, address });
+  const [formError, setFormError] = useState("");
+  const transaction = useTransaction(rpcUrl, address, "transfer_trst");
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
+  const reviewButtonRef = useRef<HTMLButtonElement>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [sending, setSending] = useState(false);
+  const [offlineRequest, setOfflineRequest] = useState<object | null>(null);
+  const sending = transaction.outcome.status === "sending";
+  const blocked = sending || ["confirmed", "uncertain"].includes(transaction.outcome.status);
 
-  const { data: trstBalance, loading } = useRpc<TrstBalance>(
-    "get_trst_balance",
+  const { data: portfolio, loading, error: balanceError } = useRpc<TrstPortfolio>(
+    "get_trst_portfolio",
     { rpcUrl },
     10_000,
   );
 
+  const sources = new Map<string, bigint>();
+  for (const batch of portfolio?.batches ?? []) {
+    if (batch.status === "active") sources.set(batch.origin, (sources.get(batch.origin) ?? 0n) + BigInt(batch.amount));
+  }
+  const largestSource = [...sources.values()].reduce((largest, value) => value > largest ? value : largest, 0n);
+  function sourceFor(raw: string) {
+    return [...sources.entries()].sort(([a], [b]) => a.localeCompare(b)).find(([, balance]) => balance >= BigInt(raw))?.[0];
+  }
   function validate(): string | null {
     if (!recipient.startsWith("brst_")) return "Address must start with brst_";
-    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0)
-      return "Enter a valid amount";
+    try {
+      const raw = parseAmount(amount);
+      if (balanceError || !portfolio) return "Connect to your node before transferring";
+      if (!sourceFor(raw)) return "A single origin must cover this transfer. Enter " + formatAmount(largestSource.toString(), 18) + " TRST or less.";
+    } catch (error) { return String(error); }
     return null;
   }
 
   function handleSubmit() {
+    if (blocked) return;
     const err = validate();
     if (err) {
-      toast.error(err);
+      setFormError(err);
       return;
     }
+    setFormError("");
+    transaction.clear();
+    reviewContext.current = { rpcUrl, address };
+    const raw = parseAmount(amount);
+    setOfflineRequest({kind:"transfer",to:recipient.trim(),amount:raw,origin:sourceFor(raw)});
     setConfirmOpen(true);
   }
 
   async function handleConfirm() {
-    setSending(true);
-    try {
-      const result = await invoke<BlockResult>("transfer_trst", {
-        rpcUrl,
-        to: recipient.trim(),
-        amount: amount.trim(),
-      });
-      if (result.accepted) {
-        toast.success("Transfer sent", {
-          description: `${amount} TRST → ${recipient.slice(0, 12)}… Hash: ${result.hash.slice(0, 16)}…`,
-        });
-        setRecipient("");
-        setAmount("");
-      } else {
-        toast.error("Transfer rejected", {
-          description: result.detail ?? "Unknown error",
-        });
-      }
-    } catch (e) {
-      toast.error("Transfer failed", { description: String(e) });
-    } finally {
-      setSending(false);
+    const err = validate();
+    if (err) { setFormError(err); setConfirmOpen(false); return; }
+    const completed = await transaction.submit({
+      to: recipient.trim(),
+      amount: parseAmount(amount),
+      origin: sourceFor(parseAmount(amount)),
+    }, reviewContext.current);
+    if (completed) {
       setConfirmOpen(false);
+      setRecipient("");
+      setAmount("");
     }
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Transfer TRST</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Send your existing TRST to another wallet.
-        </p>
-      </div>
-
+    <div className="mx-auto max-w-xl space-y-4">
+      <TransactionReceipt status={transaction.outcome.status} hash={transaction.outcome.hash} onDone={transaction.clear} />
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Available TRST</CardTitle>
-          <CardDescription>Active TRST you can transfer</CardDescription>
+          <CardTitle className="text-heading">Transfer TRST</CardTitle>
         </CardHeader>
         <CardContent>
-          {loading ? (
-            <Skeleton className="h-8 w-40" />
-          ) : (
-            <p className="font-mono text-2xl font-bold text-success">
-              {formatAmount(trstBalance?.active ?? "0")}
-            </p>
-          )}
+          <div className="flex flex-wrap items-baseline justify-between gap-3 border-b pb-4">
+            <span className="text-ui text-muted-foreground">Available TRST</span>
+            {loading && !portfolio ? <Skeleton className="h-7 w-32" /> : <span className="text-title tabular-nums">{balanceError || !portfolio ? "—" : formatAmount(portfolio.total_active)}</span>}
+          </div>
+          {portfolio && !balanceError && <p className="mt-3 text-caption text-muted-foreground">Up to {formatAmount(largestSource.toString(), 18)} TRST in one transfer. Each transfer keeps one origin.</p>}
         </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Transfer Details</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent>
+          <form className="space-y-4" onSubmit={event => { event.preventDefault(); handleSubmit(); }}>
+          {balanceError && <p role="alert" className="text-ui text-warning">Balance unavailable. Check your node connection before transferring.</p>}
           <div className="space-y-2">
-            <label className="text-sm font-medium">Recipient Address</label>
+            <label htmlFor="recipient" className="text-ui">Recipient address</label>
             <Input
               className="font-mono"
               placeholder="brst_..."
+              id="recipient"
+              autoComplete="off"
+              spellCheck={false}
               value={recipient}
-              onChange={(e) => setRecipient(e.target.value)}
+              disabled={blocked}
+              onChange={(e) => { setRecipient(e.target.value); setFormError(""); }}
             />
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium">Amount</label>
+            <label htmlFor="transfer-amount" className="text-ui">Amount (TRST)</label>
             <Input
               className="font-mono"
               type="text"
+              id="transfer-amount"
               inputMode="decimal"
               placeholder="0.000000"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              disabled={blocked}
+              aria-describedby={formError ? "payment-error" : undefined}
+              onChange={(e) => { setAmount(e.target.value); setFormError(""); }}
             />
           </div>
-          <Button className="w-full" onClick={handleSubmit} disabled={sending}>
+          {formError && <p id="payment-error" role="alert" className="text-ui text-destructive">{formError}</p>}
+          <Button ref={reviewButtonRef} type="submit" className="w-full" disabled={blocked}>
             <ArrowUpRight className="h-4 w-4" />
             Transfer TRST
           </Button>
+          </form>
         </CardContent>
       </Card>
 
-      <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/50 p-4">
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-        <div className="text-sm text-muted-foreground">
-          <p className="font-medium text-foreground">About TRST transfers</p>
-          <p className="mt-1">
-            TRST transfers carry origin and link metadata. Each TRST unit traces back to the
-            burn transaction that created it. The recipient can verify the full provenance chain.
-            TRST retains its original expiry date regardless of how many times it's transferred.
-          </p>
-        </div>
-      </div>
+      <p className="max-w-prose text-caption text-muted-foreground">
+        Transferring TRST does not reset its age. Its origin stays visible, and the community’s expiry rules still apply.
+      </p>
 
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent>
+      <Dialog open={confirmOpen} onOpenChange={open => { if (!sending) setConfirmOpen(open); }}>
+        <DialogContent onCloseAutoFocus={event => { event.preventDefault(); const target = reviewButtonRef.current; if (target && !target.disabled) target.focus(); else (document.querySelector<HTMLElement>("[data-transaction-receipt]") ?? document.getElementById("main-content"))?.focus(); }}>
           <DialogHeader>
-            <DialogTitle>Confirm Transfer</DialogTitle>
+            <DialogTitle>Confirm transfer</DialogTitle>
             <DialogDescription>
               Review the details before sending.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 rounded-md bg-muted p-4">
             <div>
-              <p className="text-xs text-muted-foreground">To</p>
+              <p className="text-caption text-muted-foreground">To</p>
               <p className="break-all font-mono text-sm">{recipient}</p>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">Amount</p>
-              <p className="font-mono text-lg font-bold">{amount} TRST</p>
+              <p className="text-caption text-muted-foreground">Amount</p>
+              <p className="tabular-nums text-heading font-normal">{amount} TRST</p>
             </div>
           </div>
+          {transaction.outcome.status === "error" && <p role="alert" className="text-ui text-destructive break-words">{transaction.outcome.message}</p>}
           <DialogFooter>
             <Button
               variant="outline"
@@ -175,9 +177,10 @@ export default function TransferPage() {
             >
               Cancel
             </Button>
+            {offlineRequest && <OfflineActionButton request={offlineRequest} address={reviewContext.current.address} rpcUrl={reviewContext.current.rpcUrl} disabled={sending} />}
             <Button onClick={handleConfirm} disabled={sending}>
               {sending && <Loader2 className="animate-spin" />}
-              Confirm Transfer
+              {sending ? "Submitting…" : "Confirm Transfer"}
             </Button>
           </DialogFooter>
         </DialogContent>

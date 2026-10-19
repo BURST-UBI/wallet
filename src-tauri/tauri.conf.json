@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
-  "productName": "BURST Wallet",
+  "productName": "Burst Wallet",
   "version": "0.1.0",
   "identifier": "com.burst.wallet",
   "build": {
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "BURST Wallet",
+        "title": "Burst Wallet",
         "width": 1000,
         "height": 700,
         "minWidth": 800,
@@ -23,18 +23,24 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'",
+      "devCsp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' ipc: http://ipc.localhost ws://localhost:1430 ws://127.0.0.1:1430; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'"
     }
   },
   "bundle": {
+    "linux": {
+      "deb": {
+        "depends": ["libc6 (>= 2.39)", "libwebkit2gtk-4.1-0", "libgtk-3-0"]
+      }
+    },
     "active": true,
     "targets": "all",
     "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
+      "icons-whitepaper/32x32.png",
+      "icons-whitepaper/128x128.png",
+      "icons-whitepaper/128x128@2x.png",
+      "icons-whitepaper/icon.icns",
+      "icons-whitepaper/icon.ico"
     ]
   }
 }

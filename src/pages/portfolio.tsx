@@ -1,5 +1,8 @@
-import { useState } from "react";
-import { CircleDollarSign, Award, AlertTriangle, Info, Clock, ChevronDown } from "lucide-react";
+import { TrstIcon } from "@/components/burst-icons";
+import { OriginInspector } from "@/components/origin-inspector";
+import { MergeBatches } from "@/components/merge-batches";
+import { useEffect, useMemo, useState } from "react";
+import { Award, AlertTriangle, ChevronDown } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -7,6 +10,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { HelpLabel } from "@/components/help-label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useWallet, useRpc } from "@/hooks/use-wallet";
@@ -18,7 +23,7 @@ function batchStatus(batch: TrstBatch) {
   if (batch.status === "expired") return { label: "Virtue Points", color: "bg-muted text-muted-foreground border-border" };
 
   const now = Date.now() / 1000;
-  const remaining = batch.expiry_at - now;
+  const remaining = batch.expiry_at === null ? Infinity : batch.expiry_at - now;
   const thirtyDays = 30 * 86400;
 
   if (remaining <= 0) return { label: "Expired", color: "bg-muted text-muted-foreground border-border" };
@@ -26,165 +31,79 @@ function batchStatus(batch: TrstBatch) {
   return { label: "Active", color: "bg-success/15 text-success border-success/30" };
 }
 
-function expiryProgress(batch: TrstBatch) {
-  const now = Date.now() / 1000;
-  const total = batch.expiry_at - batch.timestamp;
-  if (total <= 0) return 100;
-  const elapsed = now - batch.timestamp;
-  return Math.min(100, Math.max(0, (elapsed / total) * 100));
-}
-
-function CompositionBar({
-  active,
-  expired,
-  revoked,
-}: {
-  active: number;
-  expired: number;
-  revoked: number;
-}) {
-  const total = active + expired + revoked;
-  if (total === 0) {
-    return (
-      <div className="h-3 w-full rounded-full bg-muted" />
-    );
-  }
-  const activePct = (active / total) * 100;
-  const expiredPct = (expired / total) * 100;
-  const revokedPct = (revoked / total) * 100;
-
-  return (
-    <div className="space-y-2">
-      <div className="flex h-3 w-full overflow-hidden rounded-full bg-muted">
-        {activePct > 0 && (
-          <div
-            className="h-full bg-gradient-to-r from-success to-success/80 transition-all duration-500"
-            style={{ width: `${activePct}%` }}
-          />
-        )}
-        {expiredPct > 0 && (
-          <div
-            className="h-full bg-gradient-to-r from-warning to-warning/80 transition-all duration-500"
-            style={{ width: `${expiredPct}%` }}
-          />
-        )}
-        {revokedPct > 0 && (
-          <div
-            className="h-full bg-gradient-to-r from-destructive to-destructive/80 transition-all duration-500"
-            style={{ width: `${revokedPct}%` }}
-          />
-        )}
-      </div>
-      <div className="flex justify-between text-[11px] text-muted-foreground">
-        <div className="flex items-center gap-1.5">
-          <div className="h-2 w-2 rounded-full bg-success" />
-          Active {activePct.toFixed(1)}%
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="h-2 w-2 rounded-full bg-warning" />
-          Expired {expiredPct.toFixed(1)}%
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="h-2 w-2 rounded-full bg-destructive" />
-          Revoked {revokedPct.toFixed(1)}%
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function BatchCard({ batch }: { batch: TrstBatch }) {
+function BatchCard({ batch, rpcUrl }: { batch: TrstBatch; rpcUrl: string }) {
   const [expanded, setExpanded] = useState(false);
+  const [inspectOrigins, setInspectOrigins] = useState(false);
   const status = batchStatus(batch);
-  const progress = expiryProgress(batch);
+  const reference = batch.reference_value_bps;
+  const validReference = typeof reference === "number" && Number.isInteger(reference) && reference >= 0 && reference <= 10_000;
 
   return (
     <div
-      className="rounded-lg border p-4 transition-all duration-200 hover:bg-accent/20 hover:-translate-y-0.5 hover:shadow-md hover:shadow-primary/5 cursor-pointer"
-      onClick={() => setExpanded(!expanded)}
+      className="py-4 first:pt-0 last:pb-0"
     >
-      <div className="flex items-start justify-between gap-3">
+      <button type="button" aria-expanded={expanded} className="flex min-h-11 w-full flex-wrap items-start justify-between gap-3 text-start" onClick={() => setExpanded(!expanded)}>
         <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className={cn("text-[10px]", status.color)}>
-              {status.label}
-            </Badge>
-            <span className="font-mono text-sm font-bold">
-              {formatAmount(batch.amount)}
-            </span>
-          </div>
+          <p className="break-all text-ui tabular-nums">{formatAmount(batch.amount)}</p>
           <div className="space-y-0.5">
-            <p className="text-xs text-muted-foreground">
-              Origin:{" "}
-              <span className="font-mono">{truncateAddress(batch.origin)}</span>
-            </p>
-            <p className="text-xs text-muted-foreground">
-              From:{" "}
-              <span className="font-mono">{truncateAddress(batch.originator)}</span>
+            <p className="text-caption text-muted-foreground">
+              {batch.origin_kind === "merge" ? "Combined by" : batch.origin_kind === "burn" ? "Created from BRN by" : "Origin account"}{" "}
+              <span className="break-all font-mono">{truncateAddress(batch.originator)}</span>
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="text-right">
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              <Clock className="h-3 w-3" />
-              {formatTimeRemaining(batch.expiry_at)}
+        <div className="flex shrink-0 items-center gap-2">
+          <div className="space-y-1 text-end">
+            <Badge variant="outline" className={cn("text-caption", status.color)}>{status.label}</Badge>
+            <div className="text-caption text-muted-foreground">
+              {batch.expiry_at === null ? "No expiry" : formatTimeRemaining(batch.expiry_at)}
             </div>
           </div>
-          <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform duration-200", expanded && "rotate-180")} />
+          <ChevronDown aria-hidden="true" className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-200", expanded && "rotate-180")} />
         </div>
-      </div>
-
-      <div className="mt-3">
-        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-          <div
-            className={cn(
-              "h-full rounded-full transition-all duration-500",
-              progress > 90
-                ? "bg-gradient-to-r from-destructive to-destructive/70"
-                : progress > 70
-                  ? "bg-gradient-to-r from-warning to-warning/70"
-                  : "bg-gradient-to-r from-success to-success/70",
-            )}
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-      </div>
+      </button>
 
       {expanded && (
-        <div className="mt-3 space-y-1.5 border-t border-border/50 pt-3 animate-fade-in-up text-xs text-muted-foreground">
-          <div className="flex justify-between">
-            <span>Full Origin Hash</span>
-            <span className="font-mono text-[10px] max-w-[280px] truncate">{batch.origin}</span>
+        <div className="mt-3 space-y-1.5 border-t border-border/50 pt-3 animate-fade-in text-caption text-muted-foreground">
+          <div className="flex flex-wrap justify-between gap-2">
+            <span>{batch.origin_kind === "merge" ? "Merge ID" : "Origin ID"}</span>
+            <span className="font-mono text-caption w-full break-all">{batch.origin}</span>
           </div>
-          <div className="flex justify-between">
-            <span>Full Originator</span>
-            <span className="font-mono text-[10px] max-w-[280px] truncate">{batch.originator}</span>
+          <div className="flex flex-wrap justify-between gap-2">
+            <span>{batch.origin_kind === "merge" ? "Merged by" : batch.origin_kind === "burn" ? "Created by" : "Origin account"}</span>
+            <span className="font-mono text-caption w-full break-all">{batch.originator}</span>
           </div>
-          <div className="flex justify-between">
-            <span>Exact Amount</span>
-            <span className="font-mono">{batch.amount}</span>
+          {batch.origin_kind === "merge" && <div>
+            <Button variant="ghost" size="sm" aria-expanded={inspectOrigins} onClick={() => setInspectOrigins(!inspectOrigins)}>
+              {inspectOrigins ? "Hide original creators" : "View original creators"}
+            </Button>
+            {inspectOrigins && <OriginInspector key={`${rpcUrl}:${batch.origin}`} rpcUrl={rpcUrl} origin={batch.origin} />}
+          </div>}
+          <div className="flex flex-wrap justify-between gap-2">
+            <span>Exact amount (TRST)</span>
+            <span className="break-all tabular-nums">{formatAmount(batch.amount, 18)}</span>
           </div>
-          <div className="flex justify-between">
-            <span>Created</span>
+          <div className="flex flex-wrap justify-between gap-2">
+            <span>Raw units</span>
+            <span className="break-all font-mono">{batch.amount}</span>
+          </div>
+          <div className="flex flex-wrap justify-between gap-2">
+            <span>Age starts</span>
             <span>{new Date(batch.timestamp * 1000).toLocaleString()}</span>
           </div>
-          <div className="flex justify-between">
+          <div className="flex flex-wrap justify-between gap-2">
             <span>Expires</span>
-            <span>{new Date(batch.expiry_at * 1000).toLocaleString()}</span>
+            <span>{batch.expiry_at === null ? "No expiry" : new Date(batch.expiry_at * 1000).toLocaleString()}</span>
           </div>
-          <div className="flex justify-between">
-            <span>Chain Length</span>
+          <div className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 [&>.help-label]:my-0">
+            <HelpLabel label="Linear reference" explanation="A pricing guide based on remaining lifetime: 100% when new or without expiry, falling linearly to 0% at expiry. Governance can change the expiry period. It does not reduce your TRST amount or set a market price." />
+            <span className="tabular-nums">{validReference ? `${(reference / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}%` : "Unavailable"}</span>
+          </div>
+          <p>Pricing guide only. Balance unchanged.</p>
+          {batch.chain_length != null && <div className="flex flex-wrap justify-between gap-2">
+            <span>Chain length</span>
             <span className="font-mono">{batch.chain_length}</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Status</span>
-            <span className="capitalize">{batch.status}</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Lifecycle Progress</span>
-            <span className="font-mono">{progress.toFixed(1)}%</span>
-          </div>
+          </div>}
         </div>
       )}
     </div>
@@ -192,97 +111,84 @@ function BatchCard({ batch }: { batch: TrstBatch }) {
 }
 
 export default function PortfolioPage() {
-  const { rpcUrl } = useWallet();
+  const { rpcUrl, address } = useWallet();
+  const [page, setPage] = useState(0);
+  useEffect(() => setPage(0), [rpcUrl, address]);
 
-  const { data: portfolio, loading } = useRpc<TrstPortfolio>(
+  const { data: portfolio, loading: refreshing, error, refetch } = useRpc<TrstPortfolio>(
     "get_trst_portfolio",
     { rpcUrl },
     15_000,
   );
 
-  const sortedBatches = portfolio?.batches
-    ? [...portfolio.batches].sort((a, b) => a.expiry_at - b.expiry_at)
-    : [];
+  const sortedBatches = useMemo(() => portfolio?.batches
+    ? [...portfolio.batches].sort((a, b) => (a.expiry_at ?? Infinity) - (b.expiry_at ?? Infinity))
+    : [], [portfolio]);
+  const pageSize = 25;
+  const pageCount = Math.max(1, Math.ceil(sortedBatches.length / pageSize));
+  const currentPage = Math.min(page, pageCount - 1);
+  const visibleBatches = sortedBatches.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
 
-  const activeVal = parseFloat(formatAmount(portfolio?.total_active ?? "0"));
-  const expiredVal = parseFloat(formatAmount(portfolio?.total_expired ?? "0"));
-  const revokedVal = parseFloat(formatAmount(portfolio?.total_revoked ?? "0"));
+  const loading = refreshing && !portfolio;
+  if (error) return <section role="alert" className="balance-panel"><h1 className="text-title">TRST unavailable</h1><p>Balances and origins cannot be confirmed right now.</p><p className="break-words text-caption text-muted-foreground">{error}</p><Button onClick={refetch} disabled={refreshing}>Try again</Button></section>;
 
   return (
     <div className="space-y-6">
-      <div className="animate-fade-in-up">
-        <h1 className="text-2xl font-bold tracking-tight">TRST Portfolio</h1>
+      <div className="animate-fade-in">
+        <h1 className="text-title font-normal tracking-tight">Your TRST</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Detailed view of all your TRST batches and their lifecycle.
+          What you can spend, and what stays as reputation.
         </p>
       </div>
 
-      <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/50 p-4 animate-fade-in-up" style={{ animationDelay: "50ms" }}>
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-        <p className="text-sm text-muted-foreground">
-          Each TRST batch has a unique origin — the burn transaction that created it.
-          TRST expires based on the origin's timestamp. Expired TRST becomes permanent
-          virtue points — non-transferable proof of your economic contribution.
-        </p>
-      </div>
-
-      {/* Composition Bar */}
-      {!loading && (
-        <Card className="animate-fade-in-up" style={{ animationDelay: "100ms" }}>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Portfolio Composition</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <CompositionBar active={activeVal} expired={expiredVal} revoked={revokedVal} />
-          </CardContent>
-        </Card>
-      )}
+      <HelpLabel label="About expiry" explanation="TRST age starts at its original BRN payment, not its latest transfer. Expired TRST stays visible as reputation. The community can change the expiry period, which can make expired TRST spendable again. Revocation for fraud is separate." />
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <Card className="animate-fade-in-up" style={{ animationDelay: "150ms" }}>
+        <Card className="animate-fade-in">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Active</CardTitle>
-            <CircleDollarSign className="h-4 w-4 text-success" />
+            <CardTitle className="text-sm font-normal text-muted-foreground">Active</CardTitle>
+            <TrstIcon className="h-4 w-4 text-success" />
           </CardHeader>
           <CardContent>
             {loading ? (
               <Skeleton className="h-8 w-24" />
             ) : (
-              <p className="font-mono text-2xl font-bold text-success">
+              <p className="break-all tabular-nums text-title font-normal text-success">
                 {formatAmount(portfolio?.total_active ?? "0")}
               </p>
             )}
           </CardContent>
         </Card>
 
-        <Card className="animate-fade-in-up" style={{ animationDelay: "200ms" }}>
+        <Card className="animate-fade-in">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Virtue Points
+            <CardTitle className="text-sm font-normal text-muted-foreground">
+              Reputation
             </CardTitle>
-            <Award className="h-4 w-4 text-amber-400" />
+            <Award className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             {loading ? (
               <Skeleton className="h-8 w-24" />
             ) : (
-              <p className="font-mono text-2xl font-bold text-amber-400">
+              <p className="break-all tabular-nums text-title font-normal text-muted-foreground">
                 {formatAmount(portfolio?.total_expired ?? "0")}
               </p>
             )}
+            <p className="mt-2 text-caption text-muted-foreground">Expired TRST kept as virtue points. Not spendable.</p>
           </CardContent>
         </Card>
 
-        <Card className="animate-fade-in-up" style={{ animationDelay: "250ms" }}>
+        <Card className="animate-fade-in">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Revoked</CardTitle>
+            <CardTitle className="text-sm font-normal text-muted-foreground">Revoked</CardTitle>
             <AlertTriangle className="h-4 w-4 text-destructive" />
           </CardHeader>
           <CardContent>
             {loading ? (
               <Skeleton className="h-8 w-24" />
             ) : (
-              <p className="font-mono text-2xl font-bold text-destructive">
+              <p className="break-all tabular-nums text-title font-normal text-destructive">
                 {formatAmount(portfolio?.total_revoked ?? "0")}
               </p>
             )}
@@ -290,14 +196,22 @@ export default function PortfolioPage() {
         </Card>
       </div>
 
-      <Card className="animate-fade-in-up" style={{ animationDelay: "300ms" }}>
+      <div className="space-y-2 text-caption">
+        <dl><div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><dt className="text-muted-foreground">Sent, awaiting receipt</dt><dd className="break-all tabular-nums">{loading ? "Loading…" : portfolio?.total_pending == null ? "Unavailable" : `${formatAmount(portfolio.total_pending)} TRST`}</dd></div></dl>
+        {!loading && (portfolio?.total_pending == null
+          ? <p className="text-muted-foreground">Your node doesn’t report outgoing pending TRST.</p>
+          : BigInt(portfolio.total_pending) > 0n && <p className="max-w-prose text-muted-foreground">Sent TRST stays attributed to you until accepted. It can’t be spent again, and its expiry date stays the same.</p>)}
+      </div>
+
+      <Card className="animate-fade-in">
         <CardHeader>
-          <CardTitle className="text-base">Batches</CardTitle>
+          <CardTitle className="text-heading">Origins and expiry</CardTitle>
           <CardDescription>
-            {sortedBatches.length} batch{sortedBatches.length !== 1 && "es"} — sorted by expiry (soonest first)
+            Soonest expiry first. Select an entry for its origin and exact amount.
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {portfolio && <div className="mb-4"><MergeBatches key={`${rpcUrl}:${address}`} batches={sortedBatches} onChanged={refetch} /></div>}
           {loading ? (
             <div className="space-y-3">
               {Array.from({ length: 5 }).map((_, i) => (
@@ -306,15 +220,20 @@ export default function PortfolioPage() {
             </div>
           ) : !sortedBatches.length ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              No TRST batches yet. Receive payments or transfers to see them here.
+              No TRST yet. Payments and transfers you receive will appear here.
             </p>
           ) : (
-            <div className="space-y-3">
-              {sortedBatches.map((batch) => (
-                <BatchCard key={batch.origin} batch={batch} />
+            <div className="divide-y">
+              {visibleBatches.map((batch, index) => (
+                <BatchCard key={`${rpcUrl}:${batch.id ?? `${batch.origin}:${currentPage * pageSize + index}`}`} batch={batch} rpcUrl={rpcUrl} />
               ))}
             </div>
           )}
+          {pageCount > 1 && <nav aria-label="TRST batch pages" className="mt-4 flex items-center justify-end gap-2">
+            <Button variant="outline" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</Button>
+            <span className="text-caption tabular-nums">Page {currentPage + 1} of {pageCount}</span>
+            <Button variant="outline" disabled={currentPage + 1 === pageCount} onClick={() => setPage(currentPage + 1)}>Next</Button>
+          </nav>}
         </CardContent>
       </Card>
     </div>

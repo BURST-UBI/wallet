@@ -1,4 +1,6 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { lazy } from "react";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { viewOnlyPaths } from "@/lib/wallet-access";
 import { Toaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useWallet } from "@/hooks/use-wallet";
@@ -8,11 +10,12 @@ import Dashboard from "@/pages/dashboard";
 import PayPage from "@/pages/pay";
 import TransferPage from "@/pages/transfer";
 import ReceivePage from "@/pages/receive";
-import PortfolioPage from "@/pages/portfolio";
-import VerificationPage from "@/pages/verification";
-import GovernancePage from "@/pages/governance";
-import HistoryPage from "@/pages/history";
-import SettingsPage from "@/pages/settings";
+const PortfolioPage = lazy(() => import("@/pages/portfolio"));
+const VerificationPage = lazy(() => import("@/pages/verification"));
+const GovernancePage = lazy(() => import("@/pages/governance"));
+const HistoryPage = lazy(() => import("@/pages/history"));
+const SettingsPage = lazy(() => import("@/pages/settings"));
+const OfflinePayPage = lazy(() => import("@/pages/offline-pay"));
 
 function RootRedirect() {
   const { address, isLocked } = useWallet();
@@ -21,8 +24,10 @@ function RootRedirect() {
 }
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { address, isLocked } = useWallet();
+  const { address, isLocked, watchOnly } = useWallet();
+  const { pathname } = useLocation();
   if (!address || isLocked) return <Navigate to="/onboarding" replace />;
+  if (watchOnly && !viewOnlyPaths.has(pathname)) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 
@@ -41,6 +46,7 @@ export default function App() {
           >
             <Route path="/" element={<Dashboard />} />
             <Route path="/pay" element={<PayPage />} />
+            <Route path="/pay/offline" element={<OfflinePayPage />} />
             <Route path="/transfer" element={<TransferPage />} />
             <Route path="/receive" element={<ReceivePage />} />
             <Route path="/portfolio" element={<PortfolioPage />} />
@@ -52,13 +58,13 @@ export default function App() {
           <Route path="*" element={<RootRedirect />} />
         </Routes>
         <Toaster
-          theme="dark"
           position="bottom-right"
+          mobileOffset={{ bottom: "calc(16px + env(safe-area-inset-bottom, 0px))", left: "calc(16px + env(safe-area-inset-left, 0px))", right: "calc(16px + env(safe-area-inset-right, 0px))" }}
           toastOptions={{
             style: {
-              background: "oklch(0.18 0.008 285)",
-              border: "1px solid oklch(0.28 0.01 285)",
-              color: "oklch(0.95 0.01 90)",
+              background: "var(--color-popover)",
+              border: "1px solid var(--color-border)",
+              color: "var(--color-foreground)",
             },
           }}
         />

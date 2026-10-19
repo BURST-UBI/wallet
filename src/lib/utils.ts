@@ -1,16 +1,32 @@
 import { type ClassValue, clsx } from "clsx";
-import { twMerge } from "tailwind-merge";
+import { extendTailwindMerge } from "tailwind-merge";
+
+const twMerge = extendTailwindMerge({
+  extend: { classGroups: { "font-size": [{ text: ["caption", "ui", "heading", "title", "balance"] }] } },
+});
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatAmount(raw: string): string {
-  if (!raw || raw === "0") return "0.000000";
-  const padded = raw.padStart(7, "0");
-  const integer = padded.slice(0, -6) || "0";
-  const decimal = padded.slice(-6);
-  return `${integer}.${decimal}`;
+// Protocol raw units are u128 with 1 BRN/TRST = 10^18 raw (decisions 5.2/6.1).
+// Pure string math — u128 exceeds Number's 2^53 integer range, so this must
+// never round-trip through Number/parseFloat.
+const UNIT_DECIMALS = 18;
+const DISPLAY_DECIMALS = 6;
+
+export function formatAmount(raw: string, decimals = DISPLAY_DECIMALS): string {
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > UNIT_DECIMALS) {
+    throw new RangeError("Amount precision must be between 0 and 18 decimals");
+  }
+  if (!raw || /^0+$/.test(raw)) return decimals ? `0.${"0".repeat(decimals)}` : "0";
+  const padded = raw.padStart(UNIT_DECIMALS + 1, "0");
+  const integer = padded.slice(0, -UNIT_DECIMALS) || "0";
+  const decimal = padded.slice(-UNIT_DECIMALS).slice(0, decimals);
+  if (/^0+$/.test(integer + decimal)) {
+    return decimals ? `<0.${"0".repeat(decimals - 1)}1` : "<1";
+  }
+  return decimals ? `${integer}.${decimal}` : integer;
 }
 
 export function truncateAddress(addr: string): string {
@@ -59,7 +75,7 @@ export function formatBrnAccrual(
   const now = Date.now() / 1000;
   const elapsed = Math.max(0, now - verifiedAt);
   const accrued = rate * elapsed;
-  const burned = parseFloat(formatAmount(totalBurned));
+  const burned = parseFloat(formatAmount(totalBurned, UNIT_DECIMALS));
   const available = Math.max(0, accrued - burned);
   return available.toFixed(6);
 }
