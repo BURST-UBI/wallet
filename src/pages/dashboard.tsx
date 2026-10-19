@@ -59,7 +59,7 @@ export default function Dashboard() {
     </div>
 
     {!watchOnly && signingDevice && !signingDevice.active_here && <section aria-label="Signing device" className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
-      <div className="min-w-0 space-y-1"><p>{signingDevice.enrolled ? "Another device signs for this wallet" : "Set up signing on this device"}</p><p className="text-caption text-muted-foreground">You can view your wallet now. Review device setup before making transactions.</p></div>
+      <div className="min-w-0 flex-1 basis-64 space-y-1"><p>{signingDevice.enrolled ? "Another device signs for this wallet" : "Set up signing on this device"}</p><p className="text-caption text-muted-foreground">You can view your wallet now. Review device setup before making transactions.</p></div>
       <Button variant="outline" onClick={() => navigate("/settings#security")}>Review device setup</Button>
     </section>}
 
