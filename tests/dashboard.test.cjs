@@ -1172,7 +1172,7 @@ test('reduced motion keeps TRST disclosures immediate without rotating animation
   try {
     await page.emulateMedia({reducedMotion:'reduce'});
     await page.getByRole('link',{name:'TRST',exact:true}).click();
-    const disclosure=page.locator('main button[aria-expanded]').first();
+    const disclosure=page.getByRole('button', {name:/Origin account/}).first();
     await disclosure.waitFor();
     const properties=await disclosure.locator('svg.transition-transform').evaluate(el => getComputedStyle(el).transitionProperty);
     assert.doesNotMatch(properties,/transform|all/);
@@ -1302,8 +1302,8 @@ test('narrow wallet keeps navigation, balances and actions reachable without ove
     await page.setViewportSize({ width: 800, height: 600 });
     await page.locator('main').evaluate(el => { el.scrollTop = 0; });
     const pay = await page.getByRole('button', { name: 'Pay', exact: true }).boundingBox();
-    assert.ok(pay && pay.y + pay.height < 560, 'primary action should be visible without scrolling at desktop minimum');
     await page.screenshot({ path: '/tmp/burst-wallet-refined.png' });
+    assert.ok(pay && pay.y + pay.height < 560, 'primary action should be visible without scrolling at desktop minimum: ' + JSON.stringify(pay));
   } finally { await page.close(); }
 });
 
