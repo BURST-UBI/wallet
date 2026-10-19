@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Type-check and build
+        run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: dist
+          retention-days: 1
+      - name: Unit and driver contracts
+        run: node --experimental-strip-types --test --test-concurrency=1 tests/*.test.mjs
+      - name: Install browser test runner
+        run: |
+          npm install --prefix "$RUNNER_TEMP/browser-tests" --no-audit --no-fund playwright@1.64.1
+          "$RUNNER_TEMP/browser-tests/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Browser and mocked IPC contracts
+        env:
+          PLAYWRIGHT_MODULE: ${{ runner.temp }}/browser-tests/node_modules/playwright
+        run: |
+          npm run dev -- --host 127.0.0.1 > "$RUNNER_TEMP/vite.log" 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:1430/ > /dev/null; then break; fi
+            kill -0 "$server"
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:1430/ > /dev/null
+          node --test --test-concurrency=1 tests/*.test.cjs
+      - name: Retain failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-diagnostics
+          path: |
+            ${{ runner.temp }}/vite.log
+            /tmp/burst-*.png
+          retention-days: 7
+
+  native:
+    name: Linux native command tests
+    needs: frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: wallet
+      - id: protocol
+        run: echo "revision=$(cat wallet/ci/protocol-revision)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: BURST-UBI/protocol
+          ref: ${{ steps.protocol.outputs.revision }}
+          path: protocol
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: wallet/dist
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-10-11
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: wallet/src-tauri
+      - run: cargo test --locked --lib
+        working-directory: wallet/src-tauri

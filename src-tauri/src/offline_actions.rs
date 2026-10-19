@@ -124,7 +124,7 @@ pub async fn prepare_offline_review(rpc_url: String, expected_account: String, r
         Request::Withdraw { proposal } => OfflineAction::GovernanceWithdraw { proposal:hash(&proposal)? },
         Request::Participation { enabled } => OfflineAction::VerifierParticipation { enabled },
         Request::Delegation { scope, delegate, generation, genesis } => OfflineAction::Delegation { scope, delegate:delegate.as_deref().map(address).transpose()?, generation, genesis },
-        Request::DelegatedVote { entry, proposal, vote: selected } => OfflineAction::DelegatedVote { entry, proposal:hash(&proposal)?, vote:vote(&selected)? },
+        Request::DelegatedVote { entry, proposal, vote: selected } => OfflineAction::DelegatedVote { entry:Box::new(entry), proposal:hash(&proposal)?, vote:vote(&selected)? },
     };
     let context = client.prepare_offline_action(&account, action).await.map_err(|error| error.to_string())?;
     prepared(context)
