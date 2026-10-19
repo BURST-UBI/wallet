@@ -14,7 +14,7 @@ on:
       browser_target:
         description: Browser test file for diagnosis; all preserves the complete suite
         type: choice
-        options: [all, dashboard]
+        options: [all, dashboard, appeals, constitution, offline-payment, scoped-delegation, verifier-participation, build-watch]
         default: all
 
 permissions:
@@ -32,6 +32,12 @@ jobs:
       run:
         working-directory: wallet
     steps:
+      - name: Validate diagnostic selection
+        if: github.event_name == 'workflow_dispatch' && inputs.browser_filter != '' && inputs.browser_target == 'all'
+        run: |
+          echo 'Select one browser_target when using browser_filter; all-file filtered runs are not supported.' >&2
+          exit 2
+        working-directory: ${{ github.workspace }}
       - uses: actions/checkout@v4
         with:
           path: wallet
@@ -79,7 +85,7 @@ jobs:
           args=(--test --test-concurrency=1)
           if [[ -n "$BROWSER_FILTER" ]]; then args+=(--test-name-pattern "$BROWSER_FILTER"); fi
           files=(tests/*.test.cjs)
-          if [[ "$BROWSER_TARGET" == dashboard ]]; then files=(tests/dashboard.test.cjs); fi
+          if [[ "$BROWSER_TARGET" != all ]]; then files=("tests/$BROWSER_TARGET.test.cjs"); fi
           node "${args[@]}" "${files[@]}"
       - name: Retain failure diagnostics
         if: failure()
