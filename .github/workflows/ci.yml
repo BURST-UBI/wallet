@@ -18,19 +18,32 @@ jobs:
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: wallet
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: wallet
+      - id: dashboard
+        run: echo "revision=$(cat ci/node-gui-revision)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: BURST-UBI/node-gui
+          ref: ${{ steps.dashboard.outputs.revision }}
+          path: node-gui
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: wallet/package-lock.json
       - run: npm ci
       - name: Type-check and build
         run: npm run build
       - uses: actions/upload-artifact@v4
         with:
           name: frontend-dist
-          path: dist
+          path: wallet/dist
           retention-days: 1
       - name: Unit and driver contracts
         run: node --experimental-strip-types --test --test-concurrency=1 tests/*.test.mjs
