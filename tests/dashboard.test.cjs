@@ -1167,8 +1167,9 @@ test('slow polling does not starve successful responses or start overlapping req
   } finally {await page.close();}
 });
 
-test('reduced motion keeps TRST disclosures immediate without rotating animation', async () => {
+test('reduced motion keeps TRST disclosures immediate without rotating animation', {timeout:45_000}, async () => {
   const page = await wallet('test');
+  page.setDefaultTimeout(10_000);
   try {
     await page.emulateMedia({reducedMotion:'reduce'});
     await page.getByRole('link',{name:'TRST',exact:true}).click();
@@ -1288,8 +1289,9 @@ test('welcome keeps every recovery route and supports keyboard selection', async
   } finally { await page.close(); }
 });
 
-test('narrow wallet keeps navigation, balances and actions reachable without overflow', async () => {
+test('narrow wallet keeps navigation, balances and actions reachable without overflow', {timeout:45_000}, async () => {
   const page = await wallet('test');
+  page.setDefaultTimeout(10_000);
   try {
     for (const width of [320, 500, 800]) {
       await page.setViewportSize({ width, height: 700 });
