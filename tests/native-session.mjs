@@ -331,6 +331,11 @@ try {
     assert.match(url, /^(tauri:\/\/localhost|https?:\/\/tauri\.localhost)/,
       'Embedded acceptance must not use a development server');
   }
+  if (embedded && !process.env.NATIVE_RESUME_DATA_DIR) {
+    const { checkSecurity } = await import('./native-security.mjs');
+    await checkSecurity((script, args = [], asynchronous = false) =>
+      driverCall(`/session/${session}/execute/${asynchronous ? 'async' : 'sync'}`, { script, args }));
+  }
   // Configure the node while locked, before UI automation could sign anything.
   await driverCall(`/session/${session}/execute/sync`, {
     script: 'localStorage.setItem("burst-wallet", JSON.stringify({state:{rpcUrl:arguments[0]},version:0}));return true;',
