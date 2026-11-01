@@ -31,7 +31,7 @@ await script(`document.querySelector('.settings-disclosure summary').click();ret
 await script(`const select=document.querySelector('select');select.value='any';select.dispatchEvent(new Event('change',{bubbles:true}));return true;`);
 await wait(`[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Go to Dashboard')?.disabled`);
 await click('Save trust rules');
-await wait(`document.body.innerText.includes('Trust at least one group directly, or use protocol checks only.')`);
+await wait(`document.body.innerText.includes('Add trusted creator addresses, select a group, or use protocol checks only.')`);
 assert.equal(await script(`return [...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Go to Dashboard').disabled`),true);
 await script(`const select=document.querySelector('select');select.value='protocol';select.dispatchEvent(new Event('change',{bubbles:true}));return true;`);
 await wait(`![...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Go to Dashboard')?.disabled`);
