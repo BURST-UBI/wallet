@@ -8,8 +8,14 @@ assert(process.env.WEBDRIVER_SESSION, 'Run tests/native-session.mjs to create an
 export const base = `${process.env.WEBDRIVER_URL || 'http://127.0.0.1:4444'}/session/${process.env.WEBDRIVER_SESSION}`;
 
 export async function rpc(action, params = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (action === 'genesis_endorse') {
+    const token = process.env.NATIVE_RPC_ADMIN_TOKEN;
+    assert(/^[0-9a-f]{64}$/.test(token || ''), 'Bootstrap fixture requires its own admin token');
+    headers.Authorization = `Bearer ${token}`;
+  }
   const response = await fetch(rpcUrl, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers,
     body: JSON.stringify({ ...params, action }), signal: AbortSignal.timeout(45000),
   });
   assert(response.ok, `RPC HTTP ${response.status}`);

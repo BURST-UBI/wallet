@@ -1,6 +1,7 @@
 // Owns the disposable daemon, isolated desktop profile and WebDriver session.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { cp, mkdtemp, mkdir, open, readFile, writeFile, stat } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { createServer as createHttpServer } from 'node:http';
@@ -82,6 +83,7 @@ if (returnRecovery) {
 const certifiedFixture = certifiedOnboarding || certifiedLifecycle || certifiedGovernance || certifiedExclusion || certifiedReadiness;
 assert([certifiedOnboarding, certifiedLifecycle, certifiedGovernance, certifiedExclusion, certifiedReadiness].filter(Boolean).length <= 1, 'Choose one certified journey');
 const externalFixture = scopedFixture || constitutionFixture || parameterFixture || appealFixture || offlinePanelFixture || expiryReturnFixture || expiredMergeFixture || certifiedFixture || forkFixture || returnRecovery || historyFixture || devicePhase;
+const adminToken = externalFixture ? undefined : randomBytes(32).toString('hex');
 assert([scopedFixture,constitutionFixture,parameterFixture,appealFixture,expiryReturnFixture,expiredMergeFixture,groupsFixture,signerOnly,walletOnly,deviceHandoff,graphFixture,offlineFixture,offlineProposalReadback,certifiedFixture,forkFixture,returnRecovery,historyFixture,legacyMigration].filter(Boolean).length<=1, 'Choose one desktop fixture');
 if (externalFixture) {
   assert(process.env.NATIVE_FIXTURE_RPC_URL && (scopedFixture ? process.env.NATIVE_PROPOSAL : historyFixture ? process.env.NATIVE_HISTORY_REFERENCE : process.env.NATIVE_RESULT_PATH),
@@ -256,7 +258,7 @@ try {
     '--network', 'dev', '--data-dir', join(evidence, 'ledger'), '--port', String(challengeP2pPort),
     '--rpc-bind', '127.0.0.1', '--rpc-port', String(rpcPort), '--disable-upnp',
     '--representative-key-file', join(evidence, 'public-dev.key'), 'node', 'run',
-  ], 'daemon.log');
+  ], 'daemon.log', { ...env, BURST_RPC_ADMIN_TOKEN: adminToken });
   await waitForReady(daemon, async () => {
     let response;
     try {
@@ -412,6 +414,7 @@ try {
     try {
       const child = spawn(process.execPath, [fileURLToPath(new URL(test, import.meta.url))], {
         cwd: root, env: { ...activeEnv, NODE_RPC_URL: rpcUrl, WEBDRIVER_URL: driverUrl, WEBDRIVER_SESSION: session,
+          ...(adminToken ? { NATIVE_RPC_ADMIN_TOKEN: adminToken } : {}),
           ...(deviceHandoff ? {NATIVE_DEVICE_PHASE:devicePhase ? process.env.NATIVE_DEVICE_PHASE : ['prepare','takeover','recover','stale'][index]} : {}),
           ...(exclusionRestart ? { NATIVE_EXCLUSION_PHASE: ['prepare', 'recover'][index] } : {}),
           ...(exclusionFollowthrough ? { NATIVE_EXCLUSION_PHASE: 'followthrough' } : {}),
