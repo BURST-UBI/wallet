@@ -8,7 +8,7 @@ export function AppearanceToggle() {
     catch { return false; }
   });
   useLayoutEffect(() => {
-    // A theme switch is a single state change, not a page-wide color animation.
+    // Suppress transitions while applying the theme, then restore them next frame.
     document.documentElement.classList.add("theme-switching");
     document.body.classList.toggle("dark", dark);
     document.documentElement.style.colorScheme = dark ? "dark" : "light";

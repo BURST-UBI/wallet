@@ -19,7 +19,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useWallet, useBrn } from "@/hooks/use-wallet";
+import { useWallet } from "@/hooks/use-wallet";
+import { useBrn } from "@/hooks/use-brn";
 import { parseAmount } from "@/lib/brn";
 import { formatAmount } from "@/lib/utils";
 
@@ -67,11 +68,11 @@ export default function PayPage() {
   async function handleConfirm() {
     const err = validate();
     if (err) { setFormError(err); setConfirmOpen(false); return; }
-    const completed = await transaction.submit({
+    const showReceipt = await transaction.submit({
       provider: provider.trim(),
       amount: parseAmount(amount),
     }, reviewContext.current);
-    if (completed) {
+    if (showReceipt) {
       setConfirmOpen(false);
       setProvider("");
       setAmount("");

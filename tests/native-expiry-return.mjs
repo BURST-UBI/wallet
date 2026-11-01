@@ -8,8 +8,8 @@ const source = process.env.NATIVE_RETURN_SOURCE;
 assert.match(source || '', /^[0-9a-f]{64}$/);
 assert(process.env.NATIVE_RESULT_PATH);
 
-async function script(code, args = [], async = false) {
-  const response = await fetch(`${base}/execute/${async ? 'async' : 'sync'}`, {
+async function script(code, args = [], executeAsync = false) {
+  const response = await fetch(`${base}/execute/${executeAsync ? 'async' : 'sync'}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ script: code, args }), signal: AbortSignal.timeout(45000),
   });

@@ -6,7 +6,8 @@ import { Copy, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { useWallet, useRpc } from "@/hooks/use-wallet";
+import { useWallet } from "@/hooks/use-wallet";
+import { useRpc } from "@/hooks/use-rpc";
 import { useWalletStore } from "@/stores/wallet-store";
 import { useTransaction } from "@/hooks/use-transaction";
 import { TransactionReceipt } from "@/components/transaction-receipt";
@@ -81,7 +82,7 @@ export default function ReceivePage() {
       setActionError("Your wallet or connection changed. Close this review and start again."); return;
     }
     pendingAction.current = true; setBusy(true);
-    const confirmed: string[] = [];
+    const acceptedHashes: string[] = [];
     try {
       for (const [index, block] of review.entries()) {
         const wallet = useWalletStore.getState();
@@ -89,12 +90,12 @@ export default function ReceivePage() {
         setProgress((block.return_credit ? "Claiming " : "Receiving ") + (index + 1) + " of " + review.length + "…");
         const result = await invoke<BlockResult>("receive_pending", { rpcUrl: context.current.rpcUrl, expectedAccount: context.current.address, hash: block.hash });
         if (!result.accepted) throw new Error(result.detail ?? "This payment could not be received.");
-        confirmed.push(block.hash);
-        setReceived([...confirmed]);
+        acceptedHashes.push(block.hash);
+        setReceived([...acceptedHashes]);
       }
-      setProgress(onlyReturns ? "Returned funds claimed." : "Received " + confirmed.length + (confirmed.length === 1 ? " payment." : " payments."));
+      setProgress(onlyReturns ? "Returned funds claimed." : "Received " + acceptedHashes.length + (acceptedHashes.length === 1 ? " payment." : " payments."));
     } catch (error) {
-      setProgress(confirmed.length ? "Received " + confirmed.length + " of " + review.length + "." : "");
+      setProgress(acceptedHashes.length ? "Received " + acceptedHashes.length + " of " + review.length + "." : "");
       setActionError(String(error));
     } finally {
       pendingAction.current = false; setBusy(false); refreshPending();
@@ -144,7 +145,7 @@ export default function ReceivePage() {
           {block.return_credit && <p className="text-caption text-muted-foreground">Returned after expiry</p>}
           <dl className="space-y-2 text-caption">{!block.return_credit && <div><dt className="text-muted-foreground">From</dt><dd className="break-all select-text font-mono">{block.source}</dd></div>}<div><dt className="text-muted-foreground">Payment ID</dt><dd className="break-all select-text font-mono">{block.hash}</dd></div></dl>
           {!block.return_credit && groupHolds[block.hash] && <p className="text-caption text-warning">Last automatic check: {groupHolds[block.hash]}</p>}
-          {!block.return_credit && groupPolicy?.mode !== "protocol" && <p className="text-caption text-muted-foreground">Receiving here is a manual choice. It does not require your automatic group rules to pass.</p>}
+          {!block.return_credit && groupPolicy?.mode !== "protocol" && <p className="text-caption text-muted-foreground">Receiving here is a manual choice. It does not require your automatic creator trust rules to pass.</p>}
           {reviewContextMatches && <PaymentOriginDisclosure key={`${address}:${rpcUrl}:${block.hash}`} rpcUrl={rpcUrl} payment={block.hash} />}
           {received.includes(block.hash) && <p className="text-ui">{block.return_credit ? "Claimed" : "Received"}</p>}
         </div>)}</div>

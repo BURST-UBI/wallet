@@ -39,7 +39,8 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { useWallet, useRpc } from "@/hooks/use-wallet";
+import { useWallet } from "@/hooks/use-wallet";
+import { useRpc } from "@/hooks/use-rpc";
 import { truncateAddress, formatTimeSince, cn } from "@/lib/utils";
 import type { VerificationStatus } from "@/lib/types";
 import { parseAmount } from "@/lib/brn";
@@ -54,7 +55,7 @@ function stateConfig(state: string) {
     case "endorsed":
       return { icon: UserCheck, color: "text-warning", bg: "bg-warning/10", label: "Endorsed — Awaiting Verification" };
     case "voting":
-      return { icon: ShieldQuestion, color: "text-blue-400", bg: "bg-blue-400/10", label: "Voting in Progress" };
+      return { icon: ShieldQuestion, color: "text-primary", bg: "bg-primary/10", label: "Voting in Progress" };
     case "challenged":
       return { icon: ShieldAlert, color: "text-destructive", bg: "bg-destructive/10", label: "Challenged" };
     case "deactivated":
@@ -84,24 +85,24 @@ export default function VerificationPage() {
   const challengeTrigger = useRef<HTMLButtonElement>(null);
   const [endorseTarget, setEndorseTarget] = useState("");
   const [endorseAmount, setEndorseAmount] = useState("");
-  const [endorseConfirm, setEndorseConfirm] = useState(false);
+  const [showEndorseConfirmation, setShowEndorseConfirmation] = useState(false);
   const endorsing = endorseAction.outcome.status === "sending";
 
   const [challengeTarget, setChallengeTarget] = useState("");
   const [challengeStake, setChallengeStake] = useState("");
   const [challengeReason, setChallengeReason] = useState("fraud");
-  const [challengeConfirm, setChallengeConfirm] = useState(false);
+  const [showChallengeConfirmation, setShowChallengeConfirmation] = useState(false);
   const challenging = challengeAction.outcome.status === "sending";
 
   async function handleEndorse() {
     if (!canParticipate) return;
     const completed = await endorseAction.submit({ target: endorseTarget.trim(), amount: parseAmount(endorseAmount) }, reviewContext.current);
-    if (completed) { setEndorseConfirm(false); setEndorseTarget(""); setEndorseAmount(""); refetch(); }
+    if (completed) { setShowEndorseConfirmation(false); setEndorseTarget(""); setEndorseAmount(""); refetch(); }
   }
   async function handleChallenge() {
     if (!canChallenge) return;
     const completed = await challengeAction.submit({ target: challengeTarget.trim(), stake: parseAmount(challengeStake), reason: challengeReason }, reviewContext.current);
-    if (completed) { setChallengeConfirm(false); setChallengeTarget(""); setChallengeStake(""); refetch(); }
+    if (completed) { setShowChallengeConfirmation(false); setChallengeTarget(""); setChallengeStake(""); refetch(); }
   }
 
   const config = status ? stateConfig(status.state) : stateConfig("Unverified");
@@ -281,7 +282,7 @@ export default function VerificationPage() {
             try { parseAmount(endorseAmount); } catch (error) { toast.error(String(error)); return; }
             reviewContext.current = { rpcUrl, address };
             endorseAction.clear();
-            setEndorseConfirm(true);
+            setShowEndorseConfirmation(true);
           }}>
           <div className="flex items-start gap-3 rounded-lg border border-warning/30 bg-warning/5 p-3">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
@@ -346,7 +347,7 @@ export default function VerificationPage() {
             try { parseAmount(challengeStake); } catch (error) { toast.error(String(error)); return; }
             reviewContext.current = { rpcUrl, address };
             challengeAction.clear();
-            setChallengeConfirm(true);
+            setShowChallengeConfirmation(true);
           }}>
           <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/50 p-3">
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
@@ -401,7 +402,7 @@ export default function VerificationPage() {
 
       <AppealPanel key={JSON.stringify(["appeal", rpcUrl, address])} rpcUrl={rpcUrl} address={address} canSponsor={canParticipate} />
 
-      <Dialog open={endorseConfirm} onOpenChange={open => { if (!endorsing) setEndorseConfirm(open); }}>
+      <Dialog open={showEndorseConfirmation} onOpenChange={open => { if (!endorsing) setShowEndorseConfirmation(open); }}>
         <DialogContent onCloseAutoFocus={event => { event.preventDefault(); const target = endorseTrigger.current; if (target && !target.disabled) target.focus(); else (document.querySelector<HTMLElement>("[data-transaction-receipt]") ?? document.getElementById("main-content"))?.focus(); }}>
           <DialogHeader>
             <DialogTitle className="text-warning">Confirm Endorsement</DialogTitle>
@@ -423,8 +424,8 @@ export default function VerificationPage() {
           {!canParticipate && !endorsing && <p role="alert" className="text-ui text-muted-foreground">Your wallet must be verified before you can endorse someone. Check your verification status before continuing.</p>}
           {endorseAction.outcome.status === "error" && <p role="alert" className="text-ui text-destructive break-words">{endorseAction.outcome.message}</p>}
           <DialogFooter>
-            <OfflineActionButton address={address} rpcUrl={rpcUrl} request={{kind:"endorse",target:endorseTarget.trim(),amount:endorseConfirm ? parseAmount(endorseAmount) : "0"}} disabled={endorsing || !canParticipate} />
-            <Button variant="outline" onClick={() => setEndorseConfirm(false)} disabled={endorsing}>
+            <OfflineActionButton address={address} rpcUrl={rpcUrl} request={{kind:"endorse",target:endorseTarget.trim(),amount:showEndorseConfirmation ? parseAmount(endorseAmount) : "0"}} disabled={endorsing || !canParticipate} />
+            <Button variant="outline" onClick={() => setShowEndorseConfirmation(false)} disabled={endorsing}>
               Cancel
             </Button>
             <Button variant="default" onClick={handleEndorse} disabled={endorsing || !canParticipate}>
@@ -435,7 +436,7 @@ export default function VerificationPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={challengeConfirm} onOpenChange={open => { if (!challenging) setChallengeConfirm(open); }}>
+      <Dialog open={showChallengeConfirmation} onOpenChange={open => { if (!challenging) setShowChallengeConfirmation(open); }}>
         <DialogContent onCloseAutoFocus={event => { event.preventDefault(); const target = challengeTrigger.current; if (target && !target.disabled) target.focus(); else (document.querySelector<HTMLElement>("[data-transaction-receipt]") ?? document.getElementById("main-content"))?.focus(); }}>
           <DialogHeader>
             <DialogTitle className="text-destructive">Confirm Challenge</DialogTitle>
@@ -457,8 +458,8 @@ export default function VerificationPage() {
           </div>
           {challengeAction.outcome.status === "error" && <p role="alert" className="text-ui text-destructive break-words">{challengeAction.outcome.message}</p>}
           <DialogFooter>
-            <OfflineActionButton address={address} rpcUrl={rpcUrl} request={{kind:"challenge",target:challengeTarget.trim(),stake:challengeConfirm ? parseAmount(challengeStake) : "0",reason:challengeReason}} disabled={challenging || !canParticipate} />
-            <Button variant="outline" onClick={() => setChallengeConfirm(false)} disabled={challenging}>
+            <OfflineActionButton address={address} rpcUrl={rpcUrl} request={{kind:"challenge",target:challengeTarget.trim(),stake:showChallengeConfirmation ? parseAmount(challengeStake) : "0",reason:challengeReason}} disabled={challenging || !canParticipate} />
+            <Button variant="outline" onClick={() => setShowChallengeConfirmation(false)} disabled={challenging}>
               Cancel
             </Button>
             <Button variant="destructive" onClick={handleChallenge} disabled={challenging || !canChallenge}>

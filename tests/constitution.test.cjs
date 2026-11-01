@@ -1,4 +1,4 @@
-// Browser interaction contracts; the native certified fixture proves signing.
+// Browser interaction contracts with synthetic IPC; native signing is tested separately.
 const {test,before,after} = require('node:test');
 const assert = require('node:assert/strict');
 const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');

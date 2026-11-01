@@ -1,4 +1,4 @@
-// Real native IPC and a disposable local Dev ledger. No secrets logged.
+// Native IPC payments against a disposable Dev ledger. Keep keys out of diagnostics.
 import assert from 'node:assert/strict';
 import { base, rpcUrl, rpc } from './native-env.mjs';
 import { enrollSigningDeviceWith } from './native-certified-utils.mjs';

@@ -1,10 +1,14 @@
 # Whitepaper-derived icons
 
-The source identity is the whitepaper website's BRN, TRST, wallet and node artwork, retained in `src/assets/burst-docs/`. Reference snapshot: whitepaper website commit `a73b0d5`. The site's Docusaurus placeholder logo is not Burst branding.
+The icon family lives in `src/components/burst-icons.tsx`. It uses a shared
+24-unit grid: orange token diamonds with a green BRN center or blue TRST center,
+a two-center orange wallet, and a one-center purple node. Source artwork is
+retained in `src/assets/burst-docs/`.
 
-The new vectors preserve orange rounded token diamonds, green BRN, blue TRST, the two-center orange wallet and the one-center purple node. Rounded geometry, optical spacing and a shared 24-unit grid replace raster scaling. Both token centers remain solid, matching the original identity. Visible BRN/TRST labels distinguish them in monochrome; do not rely on icon color alone. The generic Burst mark pairs both centers inside the token diamond; app launchers use their own silhouettes.
-
-Emil's iconography guidance informed the consistent proportions, restrained detail, small-size review and accessible labeling. Normal action icons remain Lucide; brand colors do not indicate success, warning or connection state.
+The generic Burst mark combines both centers. App launchers use the wallet or
+node silhouette. Action icons use Lucide; brand colors do not indicate success,
+warning or connection state. Keep visible token labels because color alone does
+not distinguish BRN and TRST for every reader.
 
 ## Usage
 
@@ -33,4 +37,7 @@ The exporter updates both apps' five `public/icons/*.svg` files and generic `pub
 
 `scripts/preview-icons.mjs` regenerates these previews from the exported SVGs and built application CSS. Set `PLAYWRIGHT_MODULE` to the installed package directory and optionally `CHROMIUM_PATH` to its browser executable; build the wallet first.
 
-The wallet's 44 tests (including four icon-specific tests) and the node's nine UI tests pass. These use synthetic IPC and do not certify real ledger transactions. Production frontend builds and offline native `cargo check` pass for both apps. The icon-only pass does not restart running native sessions or change wallet data.
+The preview script checks four icons' forced-color fills and writes comparison
+images. It does not test native launcher installation, every rendered size or
+ledger behavior. Inspect the output at the sizes used by the app, then follow
+[interface validation](../interface-validation.md) for broader checks.

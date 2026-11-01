@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { base } from './native-env.mjs';
 
-export async function script(code, args = [], async = false) {
-  const response = await fetch(`${base}/execute/${async ? 'async' : 'sync'}`, {
+export async function script(code, args = [], executeAsync = false) {
+  const response = await fetch(`${base}/execute/${executeAsync ? 'async' : 'sync'}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ script: code, args }), signal: AbortSignal.timeout(45000),
   });

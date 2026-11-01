@@ -19,8 +19,8 @@ export function incomeStatus(state: BrnComponents | null, now: number) {
   return { state: "active", daily: (rate * 86400n).toString() } as const;
 }
 
-/** Whitepaper BRN equation, split at each governance rate change.
- * Integer raw units throughout; nothing is retroactively repriced. */
+/** Sum eligible time at each historical rate, excluding pauses, then subtract
+ * burns and outstanding stakes. Amount arithmetic uses integer raw units. */
 export function computeBrn(state: BrnComponents, now: number): string {
   const until = Math.floor(state.accrual_active ? now : Math.min(now, state.accrual_stopped_at ?? state.as_of));
   let accrued = 0n;

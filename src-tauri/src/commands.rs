@@ -17,7 +17,7 @@ pub struct WalletState {
     pub(crate) profile_access: OnceLock<crate::profile_access::ProfileAccess>,
     automation: Mutex<AutomationSessions>,
     automation_changed: tokio::sync::Notify,
-    pending_scan: Mutex<(String, Option<String>)>,
+    pending_scan: Mutex<PendingScan>,
     wallet: Mutex<Option<Wallet>>,
     watch_address: Mutex<Option<WalletAddress>>,
     keystore: Mutex<Option<KeystoreFile>>,
@@ -31,12 +31,18 @@ impl Default for WalletState {
             profile_access: OnceLock::new(),
             automation: Mutex::new(AutomationSessions::default()),
             automation_changed: tokio::sync::Notify::new(),
-            pending_scan: Mutex::new((String::new(), None)),
+            pending_scan: Mutex::new(PendingScan::default()),
             wallet: Mutex::new(None),
             watch_address: Mutex::new(None),
             keystore: Mutex::new(None),
         }
     }
+}
+
+#[derive(Default)]
+struct PendingScan {
+    context: String,
+    cursor: Option<String>,
 }
 
 #[derive(Default)]
@@ -136,7 +142,6 @@ mod automation_session_tests {
     }
 }
 
-// ── Response types ──────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize)]
 pub struct WalletInfo {
@@ -417,10 +422,10 @@ pub struct DelegationInfo {
     pub delegated_from: Vec<String>,
 }
 
-// ── Helpers ─────────────────────────────────────────────────────────────
 
 async fn rpc_call(url: &str, body: serde_json::Value) -> Result<serde_json::Value, String> {
-    let client = reqwest::Client::new();
+    static CLIENT: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(reqwest::Client::new);
+    let client = &*CLIENT;
     let resp = client
         .post(url)
         .timeout(std::time::Duration::from_secs(10))
@@ -429,10 +434,7 @@ async fn rpc_call(url: &str, body: serde_json::Value) -> Result<serde_json::Valu
         .await
         .map_err(|e| format!("RPC request failed: {e}"))?;
     let resp = resp.error_for_status().map_err(|e| format!("RPC HTTP error: {e}"))?;
-    let json: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("Invalid JSON response: {e}"))?;
+    let json = burst_http_client::read_json(resp).await?;
     if let Some(err) = json.get("error").and_then(|e| e.as_str()) {
         return Err(format!("Node error: {err}"));
     }
@@ -481,7 +483,6 @@ pub(crate) fn require_writable_session(state: &WalletState) -> Result<(), String
 }
 
 
-// ── Wallet management ───────────────────────────────────────────────────
 
 #[tauri::command]
 pub async fn get_node_info(rpc_url: String) -> Result<serde_json::Value, String> {
@@ -602,7 +603,6 @@ pub async fn is_locked(state: State<'_, WalletState>) -> Result<bool, String> {
     Ok(state.wallet.lock().unwrap().is_none() && state.watch_address.lock().unwrap().is_none())
 }
 
-// ── Balance queries ─────────────────────────────────────────────────────
 
 #[tauri::command]
 pub async fn get_brn_components(rpc_url: String, state: State<'_, WalletState>) -> Result<serde_json::Value, String> {
@@ -666,7 +666,6 @@ pub async fn get_account_info(
     serde_json::from_value(result).map_err(|e| format!("Parse error: {e}"))
 }
 
-// ── TRST Portfolio ──────────────────────────────────────────────────────
 
 #[tauri::command]
 pub async fn get_trst_portfolio(
@@ -682,7 +681,6 @@ pub async fn get_trst_portfolio(
     serde_json::from_value(result).map_err(|e| format!("Parse error: {e}"))
 }
 
-// ── Transactions ────────────────────────────────────────────────────────
 
 #[tauri::command]
 pub async fn get_trst_origins(
@@ -703,7 +701,7 @@ pub async fn get_payment_origins(
     client.payment_origins(&payment).await.map_err(|e| e.to_string())
 }
 
-/// Signing material stays inside the native process, never sent over RPC.
+/// Require an unlocked writable wallet and its local signing-device grant.
 pub(crate) fn signing_keys(state: &WalletState) -> Result<burst_types::KeyPair, String> {
     let keys = takeover_keys(state)?;
     require_enrolled_device(state, &keys)?;
@@ -720,7 +718,7 @@ fn require_enrolled_device(state: &WalletState, keys: &burst_types::KeyPair) -> 
     Ok(())
 }
 
-/// Root material may authorize a reviewed takeover without an existing role.
+/// Load root keys for takeover without requiring an existing device grant.
 pub(crate) fn takeover_keys(state: &WalletState) -> Result<burst_types::KeyPair, String> {
     require_writable_session(state)?;
     if let Some(access) = state.profile_access.get() { access.require_signer()?; }
@@ -759,7 +757,7 @@ mod offline_reservation_tests {
         let context = AccountState {
             signing_grant: burst_types::BlockHash::ZERO, payment_epoch: burst_types::BlockHash::new([1;32]),
             head: burst_types::BlockHash::new([2;32]), block_count: 1, representative: account.clone(),
-            brn_balance: 0, trst_balance: 0, release_sources: vec![],
+            brn_spent: 0, trst_balance: 0, release_sources: vec![],
         };
         let block = sign_state_block(build_signing_handoff(&context, &account,
             burst_types::BlockHash::new([3;32]), burst_types::BlockHash::new([4;32]), Timestamp::new(100)).unwrap(), &keys.private);
@@ -933,7 +931,7 @@ where F: FnOnce(&WalletAddress) -> Result<Transaction, burst_wallet_core::Wallet
     node.submit_signed(&keys, &transaction, TxHash::ZERO).await.map(tx_result).map_err(|e| e.to_string())
 }
 
-pub(crate) fn tx_result(result: burst_wallet_core::wallet::ProcessResult) -> TxResult {
+pub(crate) fn tx_result(result: burst_wallet_core::wallet::ProcessResponse) -> TxResult {
     TxResult { hash: result.hash, accepted: result.accepted, detail: result.detail }
 }
 
@@ -1056,13 +1054,13 @@ pub async fn reject_pending(rpc_url: String, hash: String, expected_account: Str
     client.reject_signed(&keys, &hash).await.map(tx_result).map_err(|e|e.to_string())
 }
 
-/// Wallet automation signs normal protocol blocks, only while unlocked. Work
-/// is bounded per poll and serialized with manual actions and wallet switching.
+/// While unlocked, process up to eight pending receipts and one merge group.
+/// The signing mutex serializes this with manual actions and wallet switching.
 #[tauri::command]
 pub async fn maintain_wallet(rpc_url: String, expected_account: String, auto_accept: bool,
     trusted_senders: Vec<String>, merge_level: u8, automation_session: String, group_policy: Option<crate::group_policy::GroupPolicy>, state: State<'_, WalletState>) -> Result<serde_json::Value, String> {
     use crate::group_policy::GroupMode;
-    use burst_wallet_core::trust_policy::{evaluate_payment_group_graph, GroupRequirements, TrustDecision};
+    use burst_wallet_core::trust_policy::{evaluate_payment_creators, evaluate_payment_group_graph, GroupRequirements, TrustDecision};
     let group_policy=group_policy.unwrap_or_default();
     let registry=group_policy.registry()?;
     let group_ids: Vec<_>=group_policy.groups.iter().filter(|group|group.trust_directly).map(|group|group.id.clone()).collect();
@@ -1083,10 +1081,10 @@ pub async fn maintain_wallet(rpc_url: String, expected_account: String, auto_acc
     if auto_accept {
         let scan_context=serde_json::json!([account,node.node_url(),trusted_senders,group_policy]).to_string();
         let cursor={let scan=state.pending_scan.lock().map_err(|_|"Pending scan unavailable")?;
-            if scan.0==scan_context {scan.1.clone()} else {None}};
+            if scan.context==scan_context {scan.cursor.clone()} else {None}};
         let pending = automation_read(&state,session,async {
             let value=node.rpc_call("account_pending",serde_json::json!({"account":account,"count":8,"cursor":cursor})).await.map_err(|e|e.to_string())?;
-            serde_json::from_value::<burst_wallet_core::wallet::AccountPendingResult>(value).map_err(|e|e.to_string())
+            serde_json::from_value::<burst_wallet_core::wallet::AccountPendingResponse>(value).map_err(|e|e.to_string())
         }).await?;
         for payment in pending.blocks.iter().take(8) {
             check_automation_session(&state, session)?;
@@ -1100,9 +1098,13 @@ pub async fn maintain_wallet(rpc_url: String, expected_account: String, auto_acc
                 check_automation_session(&state,session)?;
                 match origins {
                     Ok(origins) => {
-                        let result=automation_read(&state,session,async {Ok(evaluate_payment_group_graph(&origins,GroupRequirements {
-                            group_ids:&group_ids,require_all:group_policy.mode==GroupMode::All,max_hops:group_policy.max_hops },
-                            group_policy.offline_fallback,&group_client,&registry).await)}).await?;
+                        let result = if group_policy.mode == GroupMode::Personal {
+                            evaluate_payment_creators(&origins, &group_policy.trusted_creators)
+                        } else {
+                            automation_read(&state,session,async {Ok(evaluate_payment_group_graph(&origins,GroupRequirements {
+                                group_ids:&group_ids,require_all:group_policy.mode==GroupMode::All,max_hops:group_policy.max_hops },
+                                group_policy.offline_fallback,&group_client,&registry).await)}).await?
+                        };
                         match result.decision {
                             TrustDecision::Accept => used_fallback=result.used_protocol_fallback,
                             TrustDecision::Reject {reason} | TrustDecision::Warn {reason} => {
@@ -1120,7 +1122,7 @@ pub async fn maintain_wallet(rpc_url: String, expected_account: String, auto_acc
             received += 1;
             if used_fallback { protocol_fallbacks+=1; }
         }
-        *state.pending_scan.lock().map_err(|_|"Pending scan unavailable")?=(scan_context,if received>0 {None} else {pending.cursor});
+        *state.pending_scan.lock().map_err(|_|"Pending scan unavailable")?=PendingScan {context: scan_context, cursor: if received>0 {None} else {pending.cursor}};
     }
     let mut merged = 0;
     if merge_level > 0 {
@@ -1207,7 +1209,6 @@ pub async fn get_account_history(
     serde_json::from_value(result).map_err(|e| format!("Parse error: {e}"))
 }
 
-// ── Verification & Endorsement ──────────────────────────────────────────
 
 /// Get verification status for this wallet.
 #[tauri::command]
@@ -1381,7 +1382,6 @@ async fn submit_appeal(rpc_url: &str, reviewed: &burst_types::appeal::AppealRevi
 #[path = "appeal_tests.rs"]
 mod appeal_tests;
 
-// ── Governance & Delegation ─────────────────────────────────────────────
 
 #[tauri::command]
 pub async fn get_governance_proposals(rpc_url: String, cursor: Option<String>) -> Result<serde_json::Value, String> {
@@ -1394,7 +1394,7 @@ pub async fn get_governance_proposals(rpc_url: String, cursor: Option<String>) -
 pub async fn get_governance_proposal_info(rpc_url: String, hash: String) -> Result<serde_json::Value, String> {
     burst_wallet_core::signed_client::parse_hash(&hash).map_err(|error| error.to_string())?;
     let mut proposal = rpc_call(&rpc_url, serde_json::json!({"action":"governance_proposal_info", "hash":hash})).await?;
-    crate::constitution::exact_article_numbers(&mut proposal);
+    crate::constitution::stringify_article_numbers(&mut proposal);
     Ok(proposal)
 }
 
@@ -1466,7 +1466,6 @@ pub async fn get_delegation_info(
     serde_json::from_value(result).map_err(|e| format!("Parse error: {e}"))
 }
 
-// ── Keystore export ─────────────────────────────────────────────────────
 
 #[tauri::command]
 pub async fn export_private_key(

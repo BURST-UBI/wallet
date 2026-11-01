@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 pub enum GroupMode {
     #[default]
     Protocol,
+    Personal,
     Any,
     All,
 }
@@ -29,6 +30,8 @@ fn trust_directly_default() -> bool {
 pub struct GroupPolicy {
     pub mode: GroupMode,
     pub groups: Vec<GroupEndpoint>,
+    #[serde(default)]
+    pub trusted_creators: Vec<String>,
     pub offline_fallback: OfflineFallback,
     #[serde(default)]
     pub max_hops: u8,
@@ -39,6 +42,7 @@ impl Default for GroupPolicy {
         Self {
             mode: GroupMode::Protocol,
             groups: Vec::new(),
+            trusted_creators: Vec::new(),
             offline_fallback: OfflineFallback::Protocol,
             max_hops: 0,
         }
@@ -47,13 +51,21 @@ impl Default for GroupPolicy {
 
 impl GroupPolicy {
     pub fn registry(&self) -> Result<GroupRegistry, String> {
+        if self.trusted_creators.len() > 256
+            || self.trusted_creators.iter().any(|address| burst_wallet_core::signed_client::parse_address(address).is_err())
+        {
+            return Err("Choose at most 256 valid creator addresses".into());
+        }
+        if self.mode == GroupMode::Personal && self.trusted_creators.is_empty() {
+            return Err("Add at least one trusted original creator".into());
+        }
         if self.groups.len() > 32 {
             return Err("Choose at most 32 groups".into());
         }
         if self.max_hops > burst_groups::trust_graph::MAX_TRUST_HOPS {
             return Err("Group trust depth must be between 0 and 8".into());
         }
-        if self.mode != GroupMode::Protocol && !self.groups.iter().any(|group| group.trust_directly)
+        if matches!(self.mode, GroupMode::Any | GroupMode::All) && !self.groups.iter().any(|group| group.trust_directly)
         {
             return Err("Choose a group or use protocol checks only".into());
         }
@@ -152,4 +164,15 @@ mod tests {
         )
         .is_err());
     }
+    #[test]
+    fn personal_mode_requires_valid_creators_without_groups() {
+        let mut policy = GroupPolicy { mode: GroupMode::Personal, ..Default::default() };
+        assert!(policy.registry().is_err());
+        policy.trusted_creators.push(burst_crypto::derive_address(
+            &burst_crypto::keypair_from_seed(&[1; 32]).public).to_string());
+        assert!(policy.registry().is_ok());
+        policy.trusted_creators.push("invalid".into());
+        assert!(policy.registry().is_err());
+    }
+
 }

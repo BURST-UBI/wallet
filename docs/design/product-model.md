@@ -1,62 +1,107 @@
 # Wallet and node product model
 
-Reviewed 2026-10-10 against the local whitepaper, the user's implementation answers, the deck's actual slide content, and the published whitepaper repository.
+The wallet helps a person understand their balances, review payments and manage
+participation. The node dashboard helps an operator inspect connectivity, ledger
+state and protocol activity. They share visual components but serve different tasks.
 
-## The consumer promise
+## Explain the balances
 
-BURST separates what a person is given from money received from others. BRN is the birthright counter. Spending it creates the same amount of TRST for someone else. TRST can then change hands. The community controls the income rate and expiry period, including zero income and no expiry.
+BRN is a personal allowance accrued while eligible. Burning it for a payment
+creates TRST for a recipient. Existing TRST can then change hands. Read the
+connected network's rate and expiry settings; do not hardcode an income promise.
 
-The deck's bread-and-bakery example is a useful wallet design test: can someone check what they have, pay another person, receive a payment, and understand what changed? They should not have to understand a block lattice or optimize token merges first.
+Keep BRN and TRST separate. Show spendable, expired and revoked TRST distinctly.
+Neither an expired holding nor a payment proves that its holder performed useful
+work. A transfer preserves age, and a merge uses the oldest input time. Governance
+can extend the expiry period and make expired holdings active again; this does
+not clear fraud revocation.
 
-BRN and TRST must stay distinct. Do not show a combined net worth, invent a fiat exchange rate, turn BRN into a transferable token, or describe all TRST held as proof of work personally performed by the current holder. TRST may have been transferred to them.
+Use [the economic rules](../../../protocol/docs/introduction/ECONOMICS.md) for the accounting
+and [protocol parameters](../../../protocol/docs/protocol/PARAMETERS.md) for defaults.
 
-## What belongs where
+## Information hierarchy
 
-| Surface | Show first | Available on demand | Never conceal |
-| --- | --- | --- | --- |
-| Wallet home | Separate available BRN and TRST, pay, transfer, receive, current income state | Exact balances, BRN spent/staked, history records, origins | Verification restrictions, failures, revoked funds, test-network identity |
-| Receiving | Address, QR, pending payments, acceptance status | Sender rules and origin information where supported | Acceptance-policy limitations and payment failures |
-| Verification | Current status and the next step for this person | Vouching and reporting for verified participants, verifier records | Permanent endorsement cost; challenge stake and fraud/inactivity consequences |
-| TRST | Spendable amount, reputation, revoked amount, expiry | Origin identifiers, raw units, chain metadata | Expired is not revoked; neither belongs in available funds |
-| Governance | What a proposal changes, voting, optional delegation | Identifiers and technical voting records | Actual proposal text, eligibility, irreversible actions and failures |
-| Node | Connection health, peers, synchronization, ledger and consensus diagnostics | Detailed blocks, origins, logs, parameters | Isolation, errors, stale or unavailable readings |
-
-The wallet now browses proposals, reads changes and amendment text, shows real phases/deadlines, and reviews votes before signing. Native proposal adapters and the node’s additive amendment-text response require updated native binaries. On older nodes, constitutional voting stays disabled when the full text is unavailable.
-
-## Source differences that matter
-
-| Topic | Evidence | UI consequence |
+| Surface | Show first | Keep available |
 | --- | --- | --- |
-| Income defaults | Whitepaper Part 6/roadmap describes launching with `r=0`; implementation answer 5.3 chooses 1 BRN/hour; deck uses 1/hour as an example. | Read the connected network's rate history. Distinguish active, paused, zero-rate, and unavailable income. Do not hardcode a daily promise. |
-| Expiry | Implementation answer 6.9 explicitly recalculates from inception using the governance-defined period, including making expired TRST transferable again. The whitepaper describes a permanent *record*, not a license to delete it. | Preserve expired holdings. Do not say expiry can never change or that a transfer renews TRST. Keep fraud revocation separate. |
-| Governance phases | Whitepaper Part 5 describes Proposal → Voting → Cooldown → Activation. Deck slides describe Propose → Explore → Cooldown → Promote. `protocol/governance/src/proposal.rs` implements two votes and a subsequent activation phase. | Removed the wallet's hardcoded four-stage claim. A proposal reader must display actual network state. This pass does not choose new protocol rules. |
-| Humanity guarantees | Deck calls identity mathematically enforced and unbreakable. Whitepaper's Sybil Tolerance section explicitly says prevention is imperfect and needs economic/security validation. | Never imply verified TRST is risk-free or fraud impossible. Verification is a state, not an absolute security guarantee. |
-| Endorsement cost | Published website's Verification Process talks about endorsers' stakes and rewards. Its Types of Validators page, local whitepaper and current requirements distinguish permanent endorsement burns from verifier stakes. | Endorsement review must say the BRN cannot be recovered. Do not relabel this as a refundable deposit. |
-| Anti-spam | Deck infrastructure says no proof of work. Whitepaper Part 5 requires lightweight per-transaction proof of work, distinct from mining. | Consumers need payment progress, not a mining explanation. Node diagnostics can expose work generation. Do not claim PoW does not exist. |
-| Readiness | Deck says complete protocol/live five-node testnet; whitepaper roadmap still describes major engineering as future work. | Neither document proves current deployment health. Report checks performed and distinguish synthetic UI contracts from native ledger tests. |
+| Home | Separate BRN and TRST, payment actions, income eligibility | Exact amounts, spent and staked BRN, activity, errors and network identity |
+| Receive | Pending payments and acceptance state | Full sender, payment ID, exact amount, original creators and return consequences |
+| Verification | Current status and the person's next step | Endorsement burn, challenge stake, judgment, appeal eligibility and restrictions |
+| Portfolio | Spendable, expired and revoked holdings | Holding IDs, origin type, creators, age and provenance warnings |
+| Governance | Proposal changes, phase, deadline and voting eligibility | Full text, identifiers, delegation scope and signing review |
+| Node dashboard | Connection, peers, synchronization and failures | Blocks, origins, parameters, consensus diagnostics and logs |
 
-## Remaining consumer work
+Errors, uncertain submissions, irreversible actions and network identity belong
+in visible content. Supplemental definitions can use disclosures or help labels.
 
-- Governance now has proposal browsing, readable changes, deadlines, review/confirmation and a phase recheck before voting. Broader governance authoring and scoped delegation still need a separate capability audit; the current wallet delegate is global.
-- Group trust now has explicit onboarding/Settings choices, public-directory loading and live original-creator checks during automatic acceptance. Immediate-sender rules remain separate. Weighted origin rules, transitive group trust and directory publication/discovery are still open; node-reported origins are not independent proofs. Protocol verification/challenge release gates remain unchanged.
-- Consumer transaction history with reliable payment amounts and counterparties. The native account-history `amount` is a post-block TRST balance and `account` is the owner. Do not manufacture signed deltas from those fields. The home event list now omits those technical balances; the activity details retain the labeled records.
-- Verification evidence coordination and an end-to-end re-verification path. A status page and sharing instructions do not themselves prove this workflow complete.
-- Requirements 32.5–32.8 include payment-request URIs, configurable freshness display, and local contacts. These need their own implementation/coverage audit; the present address QR and raw address inputs are not a substitute.
-- Native testnet payment/recovery checks, device accessibility testing and testing across governance changes remain distinct from automated browser fixtures.
+## Payments and signing
 
-## Consumer-flow safeguards
+Review the destination, amount and operation before signing. Enter submits a form
+to review; it must not bypass confirmation. Cancellation before signing must leave
+the account unchanged. Disable repeated submission while an action is pending.
 
-- A transfer is backed by one origin group; the combined active balance is not advertised as a single-send maximum. Provenance and expiry rules are unchanged.
-- Payment/endorsement/challenge receipts distinguish confirmed, rejected and uncertain outcomes. Memory-only receipts survive route changes, not an app restart; reconcile activity after an interrupted session before submitting again.
-- Native submission errors after `process` retain the locally signed hash. A mismatched response hash cannot confirm an unrelated transaction. This changes client reporting, not ledger acceptance rules.
-- Appeals review the latest certified challenge judgment, not a new endorsement attempt. Show the judgment and exact governed stake before confirmation. Native signing rechecks both; disabled nodes and active reviews cannot submit. A revoked owner needs a verified sponsor. Node-reported outcome details are not independently verified proofs.
-- Receiving exposes full sender, exact amount and payment ID. Batch acceptance is explicitly sequential, stops on the first error, and keeps partial progress visible. Automation remains governed by the existing settings.
+A transfer may need several holdings from one origin. The combined active balance
+is not necessarily the maximum for one send. Explain the selected origin and
+available amount rather than silently changing the payment.
 
-## References read
+Distinguish account preparation from the requested payment. A maintenance-block
+hash is not a payment receipt. If the payment may have been submitted, retain its
+locally signed hash and reconcile the outcome before offering another send.
 
-- [`protocol/BURST_WHITEPAPER.md`](../../../protocol/BURST_WHITEPAPER.md), full document. Sections on the two-token distinction, lifecycle, verification, wallet/node design, economic flexibility and limitations.
-- [`protocol/IMPLEMENTATION_DECISIONS.md`](../../../protocol/IMPLEMENTATION_DECISIONS.md), relevant explicit answers including 5.3, 6.2, 6.9, 20.7–20.11, 22, 31–33. User-written answers take precedence over bold suggested defaults in that document.
-- [`deck/src/BURST_Deck.jsx`](../../../deck/src/BURST_Deck.jsx), actual slides, repository HEAD `79ab17c`, plus [`PITCH_DECK.md`](../../../PITCH_DECK.md). Local working files may differ from HEAD.
-- [Published whitepaper repository](https://github.com/BURST-UBI/whitepaper), checked out at `a73b0d5`. Read the home page and all 17 documentation pages, including BRN, TRST, wallet, node, humanity verification, legitimacy, transactions, valuation, token operations, funding, and comparisons. This is a built Docusaurus site; a separate `BURST-UBI/website` repository was not found.
+The UI receipt store in [use-transaction.ts](../../src/hooks/use-transaction.ts)
+is memory-only and survives route changes. Durable signing and recovery records
+are a separate native responsibility; do not infer restart recovery from that
+React store. See [offline actions](../../../protocol/docs/wallet/WALLETS.md#offline-actions).
 
-This document records product interpretation and gaps. It does not certify the economics, security, protocol implementation, or live network.
+## Receiving and returns
+
+Review full identifiers and exact amounts. Batch receiving is sequential: retain
+completed results and stop on failure. Page-level batch actions must say which
+payments they include. A failed read must not appear as an empty pending list.
+
+A recipient rejection creates a pending return for the sender to claim. It does
+not undo the original BRN burn. An expiry return credit is different: the ledger
+has already returned the holdings, and the later claim acknowledges that delivery.
+See [payment settlement](../../../protocol/docs/wallet/PAYMENTS.md).
+
+Automatic acceptance and manual receiving are separate choices. Explain when a
+manual decision can override automatic group rules. Group lookups disclose origin
+accounts to the selected service; they are not independent proofs of provenance.
+Changing settings or locking should stop subsequent automatic actions, while an
+already-started submission may still finish. Keep that boundary visible.
+
+## Identity and governance
+
+Verification is a protocol judgment, not a guarantee that fraud is impossible.
+Endorsement burns are permanent; verifier and challenge stakes have separate
+settlement rules. An appeal reviews a prior judgment, rather than starting a new
+enrollment. Show the relevant judgment, stake and current admission restrictions.
+
+Ordinary governance has one voting window, followed by cooldown and scheduled
+activation. `Exploration` is its stored phase name; retained `Promotion` fields
+do not imply a second vote. Display current proposal state and recheck eligibility
+before signing. Missing constitutional text must not be treated as an empty or
+approved amendment. See [governance](../../../protocol/docs/protocol/GOVERNANCE.md).
+
+Representatives, verifier panels and governance delegates have different roles.
+Do not format consensus weight as a token amount or imply that choosing a
+representative grants spending authority.
+
+## History and provenance
+
+Account-history `amount` is a post-block TRST balance, not a payment delta, and
+`account` identifies the chain owner. Do not invent a counterparty or signed
+payment amount from those fields. Keep unknown operation types visible in details
+with a neutral label rather than an incoming-payment icon.
+
+A merge account combined holdings; it did not necessarily create their BRN.
+Distinguish immediate sender, merge account and original burn creators. Use each
+holding's ID for UI identity because multiple holdings can share an origin.
+Origin inspection must not sign, receive or imply that node-supplied history has
+been independently verified.
+
+## Scope of evidence
+
+A visible control does not establish that its native or network path is available.
+Use [implementation limits](../../../protocol/docs/introduction/LIMITATIONS.md) for protocol
+availability and [interface validation](../interface-validation.md) for review
+boundaries. Keep release evidence separate from product guidance.

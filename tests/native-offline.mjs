@@ -11,14 +11,14 @@ async function invoke(command, args = {}) {
     window.__TAURI_INTERNALS__.invoke(arguments[0], arguments[1])
       .then(value => done({value}), error => done({failure:String(error)}));`, [command, args], true);
 }
-async function confirmed(hash) {
+async function waitForConfirmation(hash) {
   for (let attempt = 0; attempt < 100; attempt++) {
     if ((await rpc('block_info', {hash})).confirmed) return;
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   assert.fail(`Block did not confirm: ${hash}`);
 }
-async function actionButton(label) {
+async function clickActionButton(label) {
   assert(await script(`const dialog = [...document.querySelectorAll('[role="dialog"]')].at(-1);
     const button = [...(dialog ?? document).querySelectorAll('button')].find(button => button.textContent.trim() === arguments[0]);
     if (!button || button.disabled) return false; button.click(); return true;`,[label]), `Unavailable action button: ${label}`);
@@ -112,7 +112,7 @@ try {
       await enrollSigningDevice(receiver);
       const priorEpoch=(await rpc('params_hash')).payment_epoch;
       const endorsed=await rpc('genesis_endorse',{account:receiver});
-      assert(endorsed.verified && endorsed.block_hash);await confirmed(endorsed.block_hash);
+      assert(endorsed.verified && endorsed.block_hash);await waitForConfirmation(endorsed.block_hash);
       await until(async()=>{const ready=await rpc('params_hash');return ready.payment_epoch!==priorEpoch && ['local','peer_matches'].includes(ready.online_signing);});
     }
     challengeStake=(await rpc('protocol_params')).challenge_stake_amount;
@@ -126,18 +126,18 @@ try {
     const payments = [];
     for (let index=0; index<(trstAction==='merge'?2:1); index++) {
       const paid = await invoke('pay',{rpcUrl,expectedAccount:founder.address,provider:receiver,amount:'3'});
-      assert(!paid.failure,paid.failure);await confirmed(paid.value.hash);payments.push(paid.value.hash);
+      assert(!paid.failure,paid.failure);await waitForConfirmation(paid.value.hash);payments.push(paid.value.hash);
     }
     incoming = payments[0];
     await invoke('import_private_key',{hexKey:fixtureKey});
     if (trstAction!=='reject') {
       for (const hash of payments) {
         const received = await invoke('receive_pending',{rpcUrl,expectedAccount:receiver,hash});
-        assert(!received.failure,received.failure);await confirmed(received.value.hash);
+        assert(!received.failure,received.failure);await waitForConfirmation(received.value.hash);
       }
       const endorsed = await rpc('genesis_endorse',{account:receiver});
       assert(endorsed.verified && endorsed.block_hash);
-      await confirmed(endorsed.block_hash);
+      await waitForConfirmation(endorsed.block_hash);
     }
     trstBefore = await rpc('trst_portfolio',{account:receiver});
   }
@@ -148,19 +148,19 @@ try {
     if (existingReceipt) {
       const initial = await invoke('pay', {rpcUrl, expectedAccount:founder.address, provider:receiver, amount:'2'});
       assert(!initial.failure, initial.failure);
-      await confirmed(initial.value.hash);
+      await waitForConfirmation(initial.value.hash);
       await invoke('import_private_key', {hexKey:fixtureKey});
       const opened = await invoke('receive_pending', {rpcUrl, expectedAccount:receiver, hash:initial.value.hash});
       assert(!opened.failure, opened.failure);
       originalOpening = opened.value.hash;
-      await confirmed(originalOpening);
+      await waitForConfirmation(originalOpening);
       assert.equal((await rpc('account_info',{account:receiver})).trst_balance,'2');
       await invoke('import_private_key', {hexKey:'00'.repeat(32)});
     }
     const payment = await invoke('pay', {rpcUrl, expectedAccount:founder.address, provider:receiver, amount:'1'});
     assert(!payment.failure, payment.failure);
     incoming = payment.value.hash;
-    await confirmed(incoming);
+    await waitForConfirmation(incoming);
   }
   await invoke('lock_wallet');
   await script(`localStorage.setItem('burst-wallet', JSON.stringify({state:{rpcUrl:arguments[0],autoAccept:false,mergeLevel:0},version:0}));`, [offlineRpc]);
@@ -239,7 +239,7 @@ try {
       await click('Combine batches');
       await wait(`document.querySelectorAll('[role="dialog"] input[type="checkbox"]').length===2`);
       assert(await script(`const inputs=[...document.querySelectorAll('[role="dialog"] input[type="checkbox"]')];if(inputs.some(input=>input.disabled))return false;inputs.forEach(input=>input.click());return true;`));
-      await actionButton('Review');
+      await clickActionButton('Review');
     } else if (trstAction==='reject') {
       await click('Receive');
       await wait(`[...document.querySelectorAll('button')].some(button=>button.textContent.trim()==='Review')`);
@@ -262,9 +262,9 @@ try {
     await click('Endorse');
     }
     if (!participationAction) await wait(`!!document.querySelector('[role="dialog"]')`);
-    await actionButton('Sign offline');
+    await clickActionButton('Sign offline');
     await wait(`!![...document.querySelectorAll('button')].find(button=>button.textContent==='Prepare action')`);
-    await actionButton('Prepare action');
+    await clickActionButton('Prepare action');
     await wait(`!![...document.querySelectorAll('button')].find(button=>button.textContent==='Sign and save'&&!button.disabled)`);
     if (proposalAction) assert(await script(`return [...document.querySelectorAll('[role="dialog"]')].at(-1).textContent.includes('2000000000000000001')`),'Review lost exact proposed value');
     if (panelAction) {
@@ -274,11 +274,11 @@ try {
     }
     await disconnect();
     const disconnectedRequests = requests;
-    await actionButton('Close');
+    await clickActionButton('Close');
     assert.equal((await invoke('get_offline_payment', {expectedAccount:account})).value,null);
-    await actionButton('Sign offline');
+    await clickActionButton('Sign offline');
     await wait(`!![...document.querySelectorAll('button')].find(button=>button.textContent==='Sign and save')`);
-    await actionButton('Sign and save');
+    await clickActionButton('Sign and save');
     await wait(`!![...document.querySelectorAll('button')].find(button=>button.textContent==='Submit saved action'&&!button.disabled)`);
     assert.equal(requests,disconnectedRequests,'Offline action signing requested the network');
     assert.equal((await rpc('account_info',{account})).head,before.head,'Offline action signing submitted a block');
@@ -333,8 +333,8 @@ try {
   } else {
   manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
   const { port, receiver, account, pending } = manifest;
-  // The harness has closed the native application and launched a new process
-  // with the same private profile. No key or review state survived in memory.
+  // Recovery must start in a new application process with the same profile.
+  // Check that no wallet is loaded before restoring the saved action.
   const locked = await invoke('get_offline_payment', { expectedAccount: account });
   assert.match(locked.failure, /Wallet not loaded/);
   await wait(`document.body.innerText.includes('Create New Wallet')`);
@@ -475,14 +475,14 @@ try {
     const beforeOut=await rpc('account_info',{account});
     await script(`history.pushState({},'', '/verification');dispatchEvent(new PopStateEvent('popstate'));`);
     await wait(`[...document.querySelectorAll('button')].some(button=>button.textContent.trim()==='Stop new assignments'&&!button.disabled)`);
-    await actionButton('Sign offline');await actionButton('Prepare action');
+    await clickActionButton('Sign offline');await clickActionButton('Prepare action');
     await wait(`[...document.querySelectorAll('button')].some(button=>button.textContent.trim()==='Sign and save'&&!button.disabled)`);
-    await actionButton('Sign and save');
+    await clickActionButton('Sign and save');
     await wait(`[...document.querySelectorAll('button')].some(button=>button.textContent.trim()==='Submit saved action'&&!button.disabled)`);
     const out=(await invoke('get_offline_payment',{expectedAccount:account})).value;
     assert.equal(out.kind,'VerifierOptOut');assert.notEqual(out.hash,pending.hash);
     assert.equal((await rpc('account_info',{account})).head,beforeOut.head);
-    await actionButton('Submit saved action');
+    await clickActionButton('Submit saved action');
     await wait(`document.body.innerText.includes('The network confirmed this action.')`);
     assert.equal((await rpc('verification_status',{account})).verifier_opted_in,false);
     const afterOut=await rpc('account_info',{account});

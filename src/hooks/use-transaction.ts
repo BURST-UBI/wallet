@@ -5,7 +5,7 @@ import type { BlockResult } from "@/lib/types";
 
 type Outcome = { status: "idle" | "sending" | "confirmed" | "uncertain" | "error"; hash?: string; message?: string };
 const idle: Outcome = { status: "idle" };
-// Memory-only receipts survive route changes, without persisting wallet activity.
+// Retain these receipts across route changes for this app session only.
 const receipts = new Map<string, Outcome>();
 const listeners = new Set<() => void>();
 function subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; }

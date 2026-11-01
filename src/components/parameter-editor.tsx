@@ -3,7 +3,7 @@ import {invoke} from "@tauri-apps/api/core";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle} from "@/components/ui/dialog";
-import {useWallet} from "@/hooks/use-wallet";
+import { useWallet } from "@/hooks/use-wallet";
 import {useWalletStore} from "@/stores/wallet-store";
 import {OfflineActionButton} from "@/components/offline-action-button";
 import {parameterDisplay,parameterInput,parameterLabel,parameterRaw,parameterUnit} from "@/lib/parameters";
@@ -18,7 +18,7 @@ export function ParameterEditor({context,error,canParticipate,onSubmitted}: {
   const [editing,setEditing] = useState(false);
   const [name,setName] = useState("");
   const [value,setValue] = useState("");
-  const [never,setNever] = useState(false);
+  const [noExpiry,setNoExpiry] = useState(false);
   const [attempted,setAttempted] = useState(false);
   const [review,setReview] = useState<Review | null>(null);
   const [failure,setFailure] = useState("");
@@ -30,7 +30,7 @@ export function ParameterEditor({context,error,canParticipate,onSubmitted}: {
   let raw = "", fieldError = "";
   if (row) {
     try {
-      raw = never && row.name === "trst_expiry_secs" ? "18446744073709551615" : parameterRaw(row,value);
+      raw = noExpiry && row.name === "trst_expiry_secs" ? "18446744073709551615" : parameterRaw(row,value);
       if (raw === row.current) fieldError = "Choose a value different from the current value.";
     } catch (cause) {fieldError = cause instanceof Error ? cause.message : String(cause);}
   }
@@ -66,15 +66,15 @@ export function ParameterEditor({context,error,canParticipate,onSubmitted}: {
         <select id="governance-parameter" className="form-control min-h-11 px-3" value={name} aria-invalid={attempted&&!row} aria-describedby={attempted&&!row?"parameter-name-error":undefined} onChange={event => {
           const selected = rows.find(row => row.name === event.target.value);
           setName(event.target.value);setValue(selected ? parameterInput(selected) : "");
-          setNever(selected?.name === "trst_expiry_secs" && selected.current === "18446744073709551615");setAttempted(false);
+          setNoExpiry(selected?.name === "trst_expiry_secs" && selected.current === "18446744073709551615");setAttempted(false);
         }}><option value="">Choose a parameter</option>{rows.map(row => <option key={row.name} value={row.name}>{parameterLabel(row.name)}</option>)}</select>
         {attempted&&!row&&<p id="parameter-name-error" role="alert" className="text-caption text-destructive">Choose the parameter to change.</p>}
       </div>
       {row && <>
         <p className="text-ui text-muted-foreground">Current: <span className="text-foreground tabular-nums">{parameterDisplay(row)}</span></p>
-        {row.name === "trst_expiry_secs" && <label className="flex min-h-11 items-center gap-3 text-ui"><input type="checkbox" checked={never} onChange={event => {setNever(event.target.checked);if(!event.target.checked)setValue("");}} />No expiry</label>}
+        {row.name === "trst_expiry_secs" && <label className="flex min-h-11 items-center gap-3 text-ui"><input type="checkbox" checked={noExpiry} onChange={event => {setNoExpiry(event.target.checked);if(!event.target.checked)setValue("");}} />No expiry</label>}
         <div className="form-field"><label htmlFor="governance-new-value">New value{parameterUnit(row.unit) ? ` (${parameterUnit(row.unit)})` : ""}</label>
-          <Input id="governance-new-value" inputMode="decimal" autoComplete="off" spellCheck={false} disabled={never} value={never ? "" : value} onChange={event => setValue(event.target.value)} aria-invalid={attempted&&!!fieldError} aria-describedby={attempted&&fieldError?"parameter-value-error":undefined} />
+          <Input id="governance-new-value" inputMode="decimal" autoComplete="off" spellCheck={false} disabled={noExpiry} value={noExpiry ? "" : value} onChange={event => setValue(event.target.value)} aria-invalid={attempted&&!!fieldError} aria-describedby={attempted&&fieldError?"parameter-value-error":undefined} />
           {attempted&&fieldError&&<p id="parameter-value-error" role="alert" className="text-caption text-destructive">{fieldError}</p>}
         </div>
         {row.name === "min_work_difficulty" && <p className="text-caption text-muted-foreground">Higher values require more work for every transaction.</p>}

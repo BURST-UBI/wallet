@@ -77,7 +77,6 @@ export function NodeIcon({ tone = "color", ...props }: IconProps) {
   );
 }
 
-// The two-token relationship is the identity; app launchers use their own silhouettes.
 export function BurstMark({ tone = "color", ...props }: IconProps) {
   return (
     <Symbol name="burst" tone={tone} {...props}>

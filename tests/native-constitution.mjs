@@ -8,8 +8,8 @@ const offline = process.env.NATIVE_GOVERNANCE_OFFLINE === '1';
 
 assert.equal((await rpc('node_info')).verified_count,3);
 assert.equal((await rpc('params_hash')).full_governance_content,true);
-async function script(code,args=[],async=false) {
-  const response=await fetch(`${base}/execute/${async?'async':'sync'}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({script:code,args}),signal:AbortSignal.timeout(45000)});
+async function script(code,args=[],executeAsync=false) {
+  const response=await fetch(`${base}/execute/${executeAsync?'async':'sync'}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({script:code,args}),signal:AbortSignal.timeout(45000)});
   const {value}=await response.json();assert(response.ok&&!value?.error,JSON.stringify(value));return value;
 }
 async function invoke(command,args={}) {

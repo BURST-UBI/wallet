@@ -4,7 +4,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { useRpc, useWallet } from "@/hooks/use-wallet";
+import { useWallet } from "@/hooks/use-wallet";
+import { useRpc } from "@/hooks/use-rpc";
 import { useWalletStore } from "@/stores/wallet-store";
 import type { BlockResult, Proposal } from "@/lib/types";
 import { governanceTitle } from "@/lib/governance";
@@ -21,7 +22,7 @@ const choices: Record<Choice, string> = {yea: "Support", nay: "Oppose", abstain:
 const parameterLabel = (name: string) => name.replace(/_/g, " ").replace(/\bbrn\b/g, "BRN").replace(/\btrst\b/g, "TRST").replace(/ secs$/, " (seconds)").replace(/ bps$/, " (basis points)");
 const label = (scope: Scope) => scope.kind === "parameter" ? parameterLabel(scope.value) : `Proposal ${scope.value.slice(0, 8)}…`;
 const short = (address: string) => `${address.slice(0, 12)}…${address.slice(-6)}`;
-const open = (proposal: Proposal) => proposal.phase === "Exploration" && !!proposal.phase_deadline && proposal.phase_deadline > Date.now() / 1000;
+const isVotingOpen = (proposal: Proposal) => proposal.phase === "Exploration" && !!proposal.phase_deadline && proposal.phase_deadline > Date.now() / 1000;
 const selectStyle = "min-h-11 w-full rounded-md border bg-background px-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2";
 
 export function ScopedDelegation({proposal, canParticipate}: {proposal: Proposal | null; canParticipate: boolean}) {
@@ -29,7 +30,7 @@ export function ScopedDelegation({proposal, canParticipate}: {proposal: Proposal
   const [scope, setScope] = useState<Scope>({kind: "parameter", value: "brn_rate"});
   const [delegate, setDelegate] = useState("");
   const [incoming, setIncoming] = useState(false);
-  const [pages, setPages] = useState<(string | undefined)[]>([undefined]);
+  const [pageCursors, setPageCursors] = useState<(string | undefined)[]>([undefined]);
   const [review, setReview] = useState<Review | null>(null);
   const [error, setError] = useState("");
   const [fieldError, setFieldError] = useState("");
@@ -37,20 +38,20 @@ export function ScopedDelegation({proposal, canParticipate}: {proposal: Proposal
   const pending = useRef(false);
   const trigger = useRef<HTMLElement | null>(null);
   const context = useRef({rpcUrl, address});
-  const list = useRpc<Page>("get_scoped_delegations", {rpcUrl, incoming, cursor: pages[pages.length - 1]}, 15_000);
+  const list = useRpc<Page>("get_scoped_delegations", {rpcUrl, incoming, cursor: pageCursors[pageCursors.length - 1]}, 15_000);
   const validScope = scope.kind === "parameter" ? !!scope.value : /^[a-f0-9]{64}$/i.test(scope.value) && !/^0+$/.test(scope.value);
   const current = useRpc<Page>("get_scoped_delegations", validScope ? {rpcUrl, incoming: false, scope} : null, 15_000);
   const entry = current.data?.entries[0];
   const available = list.data?.enabled === true && !list.error;
   const editable = available && !current.error && !!current.data && current.data.enabled && (!entry || entry.confirmed);
 
-  useEffect(() => {setPages([undefined]); if (!pending.current) {setReview(null); setError("");}}, [rpcUrl, address, incoming]);
+  useEffect(() => {setPageCursors([undefined]); if (!pending.current) {setReview(null); setError("");}}, [rpcUrl, address, incoming]);
   function begin(next: Review) {
     trigger.current = document.activeElement as HTMLElement;
     context.current = {rpcUrl, address};
     setError(""); setReview(next);
   }
-  function unchanged() {
+  function requireSameWallet() {
     const wallet = useWalletStore.getState();
     if (wallet.isLocked || wallet.address !== context.current.address || wallet.rpcUrl !== context.current.rpcUrl) throw new Error("Your wallet or connection changed. Close this review and start again.");
   }
@@ -62,13 +63,13 @@ export function ScopedDelegation({proposal, canParticipate}: {proposal: Proposal
     if (!review || pending.current) return;
     pending.current = true; setBusy(true); setError("");
     try {
-      unchanged();
+      requireSameWallet();
       if (review.kind === "vote") {
         const latest = await invoke<Proposal>("get_governance_proposal_info", {rpcUrl, hash:review.proposal.hash});
-        if (latest.hash !== review.proposal.hash || !open(latest)) throw new Error("Voting changed or closed. Read the proposal again.");
+        if (latest.hash !== review.proposal.hash || !isVotingOpen(latest)) throw new Error("Voting changed or closed. Read the proposal again.");
         if (!amendmentReadable(latest) || JSON.stringify(latest.amendment_operations) !== JSON.stringify(review.proposal.amendment_operations) || latest.amendment_text !== review.proposal.amendment_text) throw new Error("The amendment content changed or is incomplete. Read it again.");
       }
-      unchanged();
+      requireSameWallet();
       const result = review.kind === "set"
         ? await invoke<BlockResult>("set_scoped_delegation", {rpcUrl, expectedAccount: address, expectedGenesis: review.genesis, scope: review.scope, generation: review.generation, delegate: review.delegate})
         : await invoke<BlockResult>("vote_with_delegation", {rpcUrl, expectedAccount: address, entry: review.entry, proposal: review.proposal.hash, vote: review.choice});
@@ -88,14 +89,14 @@ export function ScopedDelegation({proposal, canParticipate}: {proposal: Proposal
       {!list.data.entries.length && <p className="text-caption text-muted-foreground">{incoming ? "No active grants on this page." : "No delegation choices on this page."}</p>}
       <div className="divide-y">{list.data.entries.map(item => {
         const compatible = proposal && (item.scope.kind === "proposal" ? item.scope.value === proposal.hash : item.scope.value === proposal.param?.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase());
-        const canVote = incoming && canParticipate && item.confirmed && proposal && open(proposal) && compatible && amendmentReadable(proposal);
+        const canVote = incoming && canParticipate && item.confirmed && proposal && isVotingOpen(proposal) && compatible && amendmentReadable(proposal);
         return <div className="flex flex-wrap items-center justify-between gap-3 py-3" key={`${item.owner}-${item.scope.kind}-${item.scope.value}`}>
           <div className="min-w-0"><p className="text-ui break-words">{label(item.scope)}</p><p className="text-caption text-muted-foreground">{!item.confirmed ? "Awaiting confirmation" : incoming ? short(item.owner) : item.delegate ? short(item.delegate) : "Revoked"}</p></div>
           {incoming ? <div className="flex flex-wrap gap-2">{canVote ? (Object.keys(choices) as Choice[]).map(choice => <Button key={choice} variant="outline" onClick={() => begin({kind:"vote",entry:item,proposal,choice})}>{choices[choice]}</Button>) : <p className="text-caption text-muted-foreground">Read a matching open proposal to vote.</p>}</div>
           : <Button variant="ghost" onClick={() => {setScope(item.scope);setFieldError("");}}>Manage<span className="sr-only"> {label(item.scope)}</span></Button>}
         </div>;
       })}</div>
-      {(pages.length > 1 || list.data.cursor) && <div className="flex justify-between gap-3">{pages.length > 1 ? <Button variant="outline" onClick={() => setPages(value => value.slice(0,-1))}>Previous</Button> : <span />}{list.data.cursor && <Button variant="outline" onClick={() => setPages(value => [...value,list.data!.cursor!])}>Next</Button>}</div>}
+      {(pageCursors.length > 1 || list.data.cursor) && <div className="flex justify-between gap-3">{pageCursors.length > 1 ? <Button variant="outline" onClick={() => setPageCursors(value => value.slice(0,-1))}>Previous</Button> : <span />}{list.data.cursor && <Button variant="outline" onClick={() => setPageCursors(value => [...value,list.data!.cursor!])}>Next</Button>}</div>}
       {!incoming && <form className="space-y-4 border-t pt-4" onSubmit={event => {event.preventDefault();if (!editable || !canParticipate) return;if (!/^brst_[13456789abcdefghijkmnopqrstuwxyz]{60}$/.test(delegate.trim()) || delegate.trim() === address) {setFieldError("Enter another person’s complete BURST address.");return;}setFieldError("");reviewScope(delegate.trim());}}>
         <div className="grid gap-3 sm:grid-cols-2"><div className="space-y-2"><label htmlFor="delegation-kind" className="text-ui">Delegate for</label><select id="delegation-kind" className={selectStyle} value={scope.kind} onChange={event => setScope(event.target.value === "parameter" ? {kind:"parameter",value:"brn_rate"} : {kind:"proposal",value:proposal?.hash ?? ""})}><option value="parameter">A parameter</option><option value="proposal">One proposal</option></select></div>
         <div className="space-y-2"><label htmlFor="delegation-scope" className="text-ui">{scope.kind === "parameter" ? "Parameter" : "Proposal ID"}</label>{scope.kind === "parameter" ? <select id="delegation-scope" className={selectStyle} value={scope.value} onChange={event => setScope({...scope,value:event.target.value})}>{list.data.parameters.map(name => <option key={name} value={name}>{parameterLabel(name)}</option>)}</select> : <Input id="delegation-scope" className="font-mono" value={scope.value} onChange={event => setScope({...scope,value:event.target.value.trim().toLowerCase()})} spellCheck={false} autoComplete="off" />}</div></div>

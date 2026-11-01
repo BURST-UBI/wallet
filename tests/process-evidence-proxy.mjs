@@ -19,17 +19,17 @@ export async function processEvidenceProxy(upstreamUrl, path, { dropAcceptedResp
         chunks.push(chunk);
       }
       const body = Buffer.concat(chunks);
-      const process = JSON.parse(body.toString()).action === 'process';
+      const isProcessRequest = JSON.parse(body.toString()).action === 'process';
       const id = ++sequence;
-      if (process) await appendFile(path, JSON.stringify({id, request:body.toString()}) + '\n', {mode:0o600});
-      if (process && beforeProcess) await beforeProcess(body);
+      if (isProcessRequest) await appendFile(path, JSON.stringify({id, request:body.toString()}) + '\n', {mode:0o600});
+      if (isProcessRequest && beforeProcess) await beforeProcess(body);
       const upstream = await fetch(upstreamUrl, {
         method:'POST', headers:{'Content-Type':'application/json'}, body,
         signal:AbortSignal.timeout(45000),
       });
       const reply = await upstream.text();
-      if (process) await appendFile(path, JSON.stringify({id, status:upstream.status, response:reply}) + '\n', {mode:0o600});
-      if (process && dropAcceptedResponse) {
+      if (isProcessRequest) await appendFile(path, JSON.stringify({id, status:upstream.status, response:reply}) + '\n', {mode:0o600});
+      if (isProcessRequest && dropAcceptedResponse) {
         const parsed = JSON.parse(reply);
         if ((parsed.result ?? parsed).accepted === true) {
           response.destroy();

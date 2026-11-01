@@ -14,7 +14,7 @@ const labels: Record<string, string> = {
   governance_propagation_buffer_secs: "Vote propagation buffer", consti_supermajority_bps: "Constitution approval threshold",
   consti_quorum_bps: "Constitution quorum", new_wallet_spending_limit: "New wallet spending limit",
   new_wallet_limit_duration_secs: "New wallet spending-limit period", bootstrap_exit_threshold: "Bootstrap exit population",
-  new_wallet_tx_limit_per_day: "New wallet daily transaction limit", new_wallet_rate_limit_duration_secs: "New wallet rate-limit period",
+  new_wallet_rate_limit_duration_secs: "New wallet rate-limit period",
   min_work_difficulty: "Transaction work difficulty",
   min_verification_age_secs: "Minimum verified age for verifiers",
   neither_penalty_cooldown_secs: "Neither-vote penalty cooldown",

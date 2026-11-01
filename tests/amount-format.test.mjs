@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatAmount, formatBrnAccrual } from '../src/lib/utils.ts';
+import { formatAmount } from '../src/lib/utils.ts';
+import { computeBrn } from '../src/lib/brn.ts';
 
 test('positive amounts below display precision are not shown as zero', () => {
   for (const raw of ['1', '7', '999999999999']) {
@@ -28,6 +29,6 @@ test('whole-unit and custom precision displays distinguish zero from small posit
   }
 });
 
-test('legacy accrual does not parse a compact less-than label as a number', () => {
-  assert.equal(formatBrnAccrual(Math.floor(Date.now() / 1000), '1', 0), '0.000000');
+test('accrual uses raw units even when a burn is below display precision', () => {
+  assert.equal(formatAmount(computeBrn({ verified_at: 0, total_burned: '1', total_staked: '0', accrual_active: true, accrual_stopped_at: null, as_of: 1, rate_history: [{rate: '0', start: 0, end: null}] }, 1)), '0.000000');
 });

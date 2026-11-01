@@ -140,7 +140,7 @@ pub async fn get_constitution_context(
     context(&client, get_wallet_address(&state)?).await
 }
 
-fn reviewed_wallet(state: &WalletState, expected: &str) -> Result<(), String> {
+fn validate_reviewed_wallet(state: &WalletState, expected: &str) -> Result<(), String> {
     if get_wallet_address(state)? != expected {
         return Err("Your wallet changed. Review this action again.".into());
     }
@@ -193,7 +193,7 @@ pub async fn propose_parameter(
         burst_governance::GovernableParam::from_name(&parameter).map_err(|e| e.to_string())?;
     stop_automation(&state)?;
     let _guard = state.signing.lock().await;
-    reviewed_wallet(&state, &expected_account)?;
+    validate_reviewed_wallet(&state, &expected_account)?;
     let keys = signing_keys(&state)?;
     let client = crate::commands::journaled_client(&state, &rpc_url, &expected_account)?;
     let current = context(&client, expected_account).await?;
@@ -219,7 +219,7 @@ pub async fn propose_constitution(
     let content = draft.content()?;
     stop_automation(&state)?;
     let _guard = state.signing.lock().await;
-    reviewed_wallet(&state, &expected_account)?;
+    validate_reviewed_wallet(&state, &expected_account)?;
     let keys = signing_keys(&state)?;
     let client = crate::commands::journaled_client(&state, &rpc_url, &expected_account)?;
     let current = context(&client, expected_account).await?;
@@ -248,7 +248,7 @@ pub async fn endorse_governance_proposal(
 ) -> Result<TxResult, String> {
     stop_automation(&state)?;
     let _guard = state.signing.lock().await;
-    reviewed_wallet(&state, &expected_account)?;
+    validate_reviewed_wallet(&state, &expected_account)?;
     let keys = signing_keys(&state)?;
     let client = crate::commands::journaled_client(&state, &rpc_url, &expected_account)?;
     let current = context(&client, expected_account).await?;
@@ -269,7 +269,7 @@ pub async fn endorse_governance_proposal(
         .map_err(|e| e.to_string())
 }
 
-fn withdrawal_allowed(proposal: &Value, hash: &str, account: &str, now: u64) -> Result<(), String> {
+fn validate_withdrawal(proposal: &Value, hash: &str, account: &str, now: u64) -> Result<(), String> {
     if proposal["hash"].as_str() != Some(hash) || proposal["proposer"].as_str() != Some(account) {
         return Err("Only the wallet that proposed this change can withdraw it.".into());
     }
@@ -295,7 +295,7 @@ pub async fn withdraw_governance_proposal(
         burst_wallet_core::signed_client::parse_hash(&proposal).map_err(|e| e.to_string())?;
     stop_automation(&state)?;
     let _guard = state.signing.lock().await;
-    reviewed_wallet(&state, &expected_account)?;
+    validate_reviewed_wallet(&state, &expected_account)?;
     let keys = signing_keys(&state)?;
     let client = crate::commands::journaled_client(&state, &rpc_url, &expected_account)?;
     let current = context(&client, expected_account.clone()).await?;
@@ -306,7 +306,7 @@ pub async fn withdraw_governance_proposal(
         .rpc_call("governance_proposal_info", json!({"hash":hash.to_string()}))
         .await
         .map_err(|e| e.to_string())?;
-    withdrawal_allowed(
+    validate_withdrawal(
         &proposal,
         &hash.to_string(),
         &expected_account,
@@ -319,7 +319,39 @@ pub async fn withdraw_governance_proposal(
         .map_err(|e| e.to_string())
 }
 
-pub fn exact_article_numbers(proposal: &mut Value) {
+#[tauri::command]
+pub async fn veto_governance_proposal(
+    rpc_url: String,
+    expected_account: String,
+    expected_revision: String,
+    proposal: String,
+    state: State<'_, WalletState>,
+) -> Result<TxResult, String> {
+    let hash =
+        burst_wallet_core::signed_client::parse_hash(&proposal).map_err(|e| e.to_string())?;
+    stop_automation(&state)?;
+    let _guard = state.signing.lock().await;
+    validate_reviewed_wallet(&state, &expected_account)?;
+    let keys = signing_keys(&state)?;
+    let client = crate::commands::journaled_client(&state, &rpc_url, &expected_account)?;
+    let current = context(&client, expected_account.clone()).await?;
+    if current.revision != expected_revision {
+        return Err("Network rules changed. Review the veto again.".into());
+    }
+    client
+        .veto_proposal_signed(&keys, hash.into_tx_hash())
+        .await
+        .map(tx_result)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_bootstrap_status(rpc_url: String) -> Result<Value, String> {
+    burst_wallet_core::NodeClient::new(&rpc_url).map_err(|e| e.to_string())?
+        .rpc_call("bootstrap_status", json!({})).await.map_err(|e| e.to_string())
+}
+
+pub fn stringify_article_numbers(proposal: &mut Value) {
     if let Some(operations) = proposal["amendment_operations"].as_array_mut() {
         for operation in operations {
             for kind in ["ModifyArticle", "RepealArticle"] {
@@ -337,10 +369,10 @@ mod tests {
     #[test]
     fn withdrawal_requires_owner_and_an_open_proposal_window() {
         let mut proposal = json!({"hash":"proposal", "proposer":"owner", "phase":"Proposal", "phase_deadline":100});
-        assert!(withdrawal_allowed(&proposal, "proposal", "owner", 99).is_ok());
-        assert!(withdrawal_allowed(&proposal, "other", "owner", 99).is_err());
-        assert!(withdrawal_allowed(&proposal, "proposal", "other", 99).is_err());
-        assert!(withdrawal_allowed(&proposal, "proposal", "owner", 100).is_err());
+        assert!(validate_withdrawal(&proposal, "proposal", "owner", 99).is_ok());
+        assert!(validate_withdrawal(&proposal, "other", "owner", 99).is_err());
+        assert!(validate_withdrawal(&proposal, "proposal", "other", 99).is_err());
+        assert!(validate_withdrawal(&proposal, "proposal", "owner", 100).is_err());
         for phase in [
             "Exploration",
             "Cooldown",
@@ -350,11 +382,11 @@ mod tests {
             "Withdrawn",
         ] {
             proposal["phase"] = json!(phase);
-            assert!(withdrawal_allowed(&proposal, "proposal", "owner", 99).is_err());
+            assert!(validate_withdrawal(&proposal, "proposal", "owner", 99).is_err());
         }
         proposal["phase"] = json!("Proposal");
         proposal["phase_deadline"] = Value::Null;
-        assert!(withdrawal_allowed(&proposal, "proposal", "owner", 99).is_err());
+        assert!(validate_withdrawal(&proposal, "proposal", "owner", 99).is_err());
     }
     #[test]
     fn parameter_review_rejects_rounding_overflow_legacy_and_incompatible_metadata() {
@@ -421,7 +453,7 @@ mod tests {
             matches!(&operations[0], AmendmentOp::ModifyArticle { article_number: u64::MAX, new_text } if new_text == "人 🌍")
         );
         let mut proposal = json!({"amendment_operations":operations});
-        exact_article_numbers(&mut proposal);
+        stringify_article_numbers(&mut proposal);
         assert_eq!(
             proposal["amendment_operations"][0]["ModifyArticle"]["article_number"],
             u64::MAX.to_string()

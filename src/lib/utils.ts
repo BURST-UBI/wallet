@@ -9,9 +9,8 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-// Protocol raw units are u128 with 1 BRN/TRST = 10^18 raw (decisions 5.2/6.1).
-// Pure string math — u128 exceeds Number's 2^53 integer range, so this must
-// never round-trip through Number/parseFloat.
+// One BRN/TRST is 10^18 raw units. Keep amounts as decimal strings because
+// JavaScript numbers cannot represent every u128 value exactly.
 const UNIT_DECIMALS = 18;
 const DISPLAY_DECIMALS = 6;
 
@@ -65,17 +64,4 @@ export function formatTimeSince(timestamp: number): string {
   if (hours > 0) return `${hours}h ago`;
   if (minutes > 0) return `${minutes}m ago`;
   return "just now";
-}
-
-export function formatBrnAccrual(
-  verifiedAt: number,
-  totalBurned: string,
-  rate: number,
-): string {
-  const now = Date.now() / 1000;
-  const elapsed = Math.max(0, now - verifiedAt);
-  const accrued = rate * elapsed;
-  const burned = parseFloat(formatAmount(totalBurned, UNIT_DECIMALS));
-  const available = Math.max(0, accrued - burned);
-  return available.toFixed(6);
 }

@@ -3,7 +3,6 @@
 
 @theme {
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
-  /* Closed app scale: captions, controls, headings, titles, balances. */
   --text-caption: 0.8125rem;
   --text-caption--line-height: 1.5;
   --text-ui: 0.875rem;
@@ -48,7 +47,6 @@
   --color-chart-3: #8753bd;
   --color-chart-4: #966000;
   --color-chart-5: #c63232;
-  --color-blue-400: oklch(0.26 0.008 260);
   --color-cyan-400: #16788a;
   --color-green-400: #237b4b;
   --color-purple-400: #8753bd;
@@ -98,7 +96,6 @@
   --color-sidebar-border: oklch(0.3 0.006 260);
   --color-sidebar-accent: oklch(0.3 0.006 260);
   --color-sidebar-accent-foreground: oklch(0.985 0.002 260);
-  --color-blue-400: oklch(0.92 0.004 260);
   --color-cyan-400: #7bcbd9;
   --color-green-400: #7cdba0;
   --color-purple-400: #c6a3ef;
@@ -109,7 +106,6 @@
   --color-zinc-400: oklch(0.74 0.008 260);
 }
 
-/* Aliases are also consumed by charts and native toast surfaces. */
 body {
   --background: var(--color-background);
   --foreground: var(--color-foreground);
@@ -174,7 +170,6 @@ textarea.form-control { resize: vertical; min-height: 96px; }
   .field-action > .form-control { flex-basis: 100%; }
 }
 
-/* Shared shell: navigation is chrome; balances and content get the space. */
 .app-shell { display: flex; height: 100dvh; overflow: hidden; padding-block: env(safe-area-inset-top) env(safe-area-inset-bottom); padding-inline: env(safe-area-inset-left) env(safe-area-inset-right); }
 .app-sidebar { display: flex; flex-direction: column; flex: 0 0 208px; padding: 32px 16px 16px; background: var(--color-sidebar); border-inline-end: 1px solid var(--color-border); overflow-y: auto; }
 .brand-lockup { display: flex; align-items: center; gap: 10px; min-height: 44px; padding-inline: 12px; margin-block-end: 28px; color: var(--color-foreground); font-size: 1.25rem; letter-spacing: -.045em; }

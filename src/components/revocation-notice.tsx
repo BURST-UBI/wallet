@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useRpc } from "@/hooks/use-wallet";
+import { useRpc } from "@/hooks/use-rpc";
 import type { TrstPortfolio } from "@/lib/types";
 import { formatAmount } from "@/lib/utils";
 import { Button } from "@/components/ui/button";

@@ -16,16 +16,16 @@ export function MergeBatches({ batches, onChanged }: { batches: TrstBatch[]; onC
   const transaction = useTransaction(rpcUrl, address, "merge_trst");
   const [open, setOpen] = useState(false);
   const [snapshot, setSnapshot] = useState<Review | null>(null);
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [review, setReview] = useState<Review | null>(null);
   const [page, setPage] = useState(0);
   const trigger = useRef<HTMLButtonElement>(null);
   const available = snapshot?.selected ?? [];
-  const chosen = available.filter(batch => selected.includes(batch.id));
+  const chosen = available.filter(batch => selectedIds.includes(batch.id));
   const status = chosen[0]?.status;
   const pageCount = Math.max(1, Math.ceil(available.length / 25));
   const sending = transaction.outcome.status === "sending";
-  const completed = ["confirmed", "uncertain"].includes(transaction.outcome.status);
+  const showReceipt = ["confirmed", "uncertain"].includes(transaction.outcome.status);
   const total = review?.selected.reduce((sum, batch) => sum + BigInt(batch.amount), 0n);
   const expiries = review?.selected.flatMap(batch => batch.expiry_at === null ? [] : [batch.expiry_at]) ?? [];
 
@@ -35,7 +35,7 @@ export function MergeBatches({ batches, onChanged }: { batches: TrstBatch[]; onC
       setSnapshot({ rpcUrl, address, selected: batches.filter(batch => batch.id && batch.status !== "revoked").map(batch => ({
         id: batch.id!, amount: batch.amount, status: batch.status, expiry_at: batch.expiry_at,
       })) });
-      setSelected([]);
+      setSelectedIds([]);
       setReview(null);
       setPage(0);
       transaction.clear();
@@ -43,7 +43,7 @@ export function MergeBatches({ batches, onChanged }: { batches: TrstBatch[]; onC
     setOpen(next);
   }
 
-  if (completed || sending) return <TransactionReceipt {...transaction.outcome}
+  if (showReceipt || sending) return <TransactionReceipt {...transaction.outcome}
     description="Your batches are combined. Their original provenance is preserved."
     uncertainDescription="Check the saved transaction before combining again. The network may already have accepted it."
     onDone={() => { transaction.clear(); onChanged(); }} />;
@@ -76,8 +76,8 @@ export function MergeBatches({ batches, onChanged }: { batches: TrstBatch[]; onC
         </div> : <>
           <div className="max-h-72 overflow-y-auto divide-y">
             {available.slice(page * 25, (page + 1) * 25).map(batch => <label key={batch.id} className="flex min-h-11 cursor-pointer items-center gap-3 py-3">
-              <input type="checkbox" checked={selected.includes(batch.id)} disabled={!selected.includes(batch.id) && ((!!status && status !== batch.status) || selected.length >= 256)}
-                onChange={event => setSelected(previous => event.target.checked ? [...previous, batch.id] : previous.filter(id => id !== batch.id))} />
+              <input type="checkbox" checked={selectedIds.includes(batch.id)} disabled={!selectedIds.includes(batch.id) && ((!!status && status !== batch.status) || selectedIds.length >= 256)}
+                onChange={event => setSelectedIds(previous => event.target.checked ? [...previous, batch.id] : previous.filter(id => id !== batch.id))} />
               <span className="min-w-0 text-sm"><span className="block break-all tabular-nums">{formatAmount(batch.amount, 18)} TRST</span><span className="text-caption text-muted-foreground">{batch.status === "expired" ? "Expired" : "Active"} · {batch.expiry_at === null ? "No expiry" : new Date(batch.expiry_at * 1000).toLocaleDateString()} · {batch.id.slice(0, 8)}</span></span>
             </label>)}
           </div>

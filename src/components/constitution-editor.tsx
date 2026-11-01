@@ -4,7 +4,7 @@ import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle} from "@/components/ui/dialog";
 import {AmendmentReview} from "@/components/amendment-review";
-import {useWallet} from "@/hooks/use-wallet";
+import { useWallet } from "@/hooks/use-wallet";
 import {useWalletStore} from "@/stores/wallet-store";
 import {OfflineActionButton} from "@/components/offline-action-button";
 import {amendmentCharacters, validOperations} from "@/lib/constitution";

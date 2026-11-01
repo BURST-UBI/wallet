@@ -1,5 +1,5 @@
 use crate::commands::{signing_keys, stop_automation, WalletState};
-use burst_governance::{key_delegation::view, ProposalContent};
+use burst_governance::{signing_delegation::view, ProposalContent};
 use burst_transactions::governance::GovernanceVote;
 use burst_types::{appeal::AppealReview, ChallengeReason};
 use burst_wallet_core::{offline::{OfflineAction, OfflineActionContext}, signed_client::{parse_address, parse_hash}};
@@ -21,6 +21,7 @@ pub enum Request {
     Vote { proposal: String, vote: String },
     EndorseProposal { proposal: String, amount: String },
     Withdraw { proposal: String },
+    Veto { proposal: String },
     Participation { enabled: bool },
     Delegation { scope: view::ScopeChoice, delegate: Option<String>, generation: String, genesis: String },
     DelegatedVote { entry: view::Entry, proposal: String, vote: String },
@@ -82,6 +83,7 @@ fn describe(action: &OfflineAction) -> Review {
         OfflineAction::Proposal { content } => { fields = proposal_fields(content); "Publish proposal" }
         OfflineAction::GovernanceVote { proposal, vote } => { field("Proposal", proposal.to_string()); field("Vote", choice(*vote).into()); "Governance vote" }
         OfflineAction::GovernanceEndorse { proposal, burn } => { field("Proposal", proposal.to_string()); field("Permanently burn", brn(*burn)); "Endorse proposal" }
+        OfflineAction::GovernanceVeto { proposal } => { field("Proposal", proposal.to_string()); "Veto approved proposal" }
         OfflineAction::GovernanceWithdraw { proposal } => { field("Proposal", proposal.to_string()); "Withdraw proposal" }
         OfflineAction::VerifierParticipation { enabled } => { field("Participation", if *enabled {"Join verifier pool"} else {"Leave verifier pool"}.into()); "Verifier participation" }
         OfflineAction::Delegation { scope, delegate, generation, genesis } => { field("Scope", format!("{scope:?}")); field("Delegate", delegate.as_ref().map(ToString::to_string).unwrap_or_else(|| "Revoke delegation".into())); field("Reviewed generation", generation.clone()); field("Network genesis", genesis.clone()); "Voting delegation" }
@@ -121,6 +123,7 @@ pub async fn prepare_offline_review(rpc_url: String, expected_account: String, r
         }
         Request::Vote { proposal, vote: selected } => OfflineAction::GovernanceVote { proposal:hash(&proposal)?, vote:vote(&selected)? },
         Request::EndorseProposal { proposal, amount: raw } => OfflineAction::GovernanceEndorse { proposal:hash(&proposal)?, burn:amount(&raw)? },
+        Request::Veto { proposal } => OfflineAction::GovernanceVeto { proposal:hash(&proposal)? },
         Request::Withdraw { proposal } => OfflineAction::GovernanceWithdraw { proposal:hash(&proposal)? },
         Request::Participation { enabled } => OfflineAction::VerifierParticipation { enabled },
         Request::Delegation { scope, delegate, generation, genesis } => OfflineAction::Delegation { scope, delegate:delegate.as_deref().map(address).transpose()?, generation, genesis },
@@ -150,7 +153,7 @@ fn prepared(context: OfflineActionContext) -> Result<Prepared, String> {
 #[tauri::command]
 pub async fn review_saved_offline_action(rpc_url: String, expected_account: String, expected_hash: String, state: State<'_, WalletState>) -> Result<Review, String> {
     use burst_ledger::BlockType;
-    use burst_governance::key_delegation::operation::DelegationOperation;
+    use burst_governance::signing_delegation::operation::DelegationOperation;
     let _guard = state.signing.lock().await;
     let path = crate::offline::draft_path(&state, &expected_account)?;
     let (block, content) = burst_wallet_core::offline::load_action_with_content(&path).map_err(|error| error.to_string())?;
@@ -182,6 +185,7 @@ pub async fn review_saved_offline_action(rpc_url: String, expected_account: Stri
             }
             BlockType::GovernanceVote => { fields.extend([("Proposal".into(), block.link.to_string()), ("Vote".into(), match block.transaction.as_bytes()[0] {0=>"Support",1=>"Oppose",2=>"Abstain",_=>return Err("Invalid vote".into())}.into())]); "Governance vote" }
             BlockType::GovernanceEndorse => { fields.push(("Proposal".into(), block.link.to_string())); "Endorse proposal" }
+            BlockType::GovernanceVeto => { fields.push(("Proposal".into(), block.link.to_string())); "Veto approved proposal" }
             BlockType::GovernanceWithdraw => { fields.push(("Proposal".into(), block.link.to_string())); "Withdraw proposal" }
             BlockType::VerifierOptIn => "Join verifier pool",
             BlockType::VerifierOptOut => "Leave verifier pool",
@@ -198,7 +202,7 @@ pub async fn review_saved_offline_action(rpc_url: String, expected_account: Stri
             fields.push(("Amount".into(),units(cost,"TRST")));
         } else {
         let spent = amount(previous["brn_balance"].as_str().ok_or("Missing previous BRN balance")?)?;
-        let cost = block.brn_balance.checked_sub(spent).ok_or("Invalid saved BRN amount")?;
+        let cost = block.brn_spent.checked_sub(spent).ok_or("Invalid saved BRN amount")?;
         fields.push((if matches!(block.block_type, BlockType::Endorse | BlockType::GovernanceEndorse) {"Permanently burn"} else {"Stake at risk"}.into(), brn(cost)));
         }
     }
@@ -218,6 +222,12 @@ mod tests {
         assert!(serde_json::from_str::<Request>(r#"{"kind":"endorse","target":"wallet","amount":1000000000000000001}"#).is_err());
         let review = describe(&OfflineAction::Proposal {content:ProposalContent::ParameterChange {param:burst_governance::GovernableParam::BrnRate,new_value:u128::MAX}});
         assert_eq!(review.fields[1].1, u128::MAX.to_string());
+        let veto = burst_types::TxHash::new([4;32]);
+        let request: Request = serde_json::from_value(serde_json::json!({"kind":"veto","proposal":veto.to_string()})).unwrap();
+        assert!(matches!(request, Request::Veto {proposal} if proposal == veto.to_string()));
+        let review = describe(&OfflineAction::GovernanceVeto {proposal:veto});
+        assert_eq!(review.title, "Veto approved proposal");
+        assert_eq!(review.fields, vec![("Proposal".into(), veto.to_string())]);
         assert!(vote("unexpected").is_err());
         let target=burst_crypto::derive_address(&burst_crypto::keypair_from_seed(&[1;32]).public);
         let review=describe(&OfflineAction::Transfer {to:target,amount:1_000_000_000_000_000_001,origin:burst_types::TxHash::new([2;32])});

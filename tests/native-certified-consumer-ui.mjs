@@ -365,7 +365,7 @@ async function verificationPage() {
     if (!link) return false; link.click(); return true;`));
 }
 
-async function confirmedUiAction(account, blockType) {
+async function waitForConfirmedUiAction(account, blockType) {
   await until(async () => {
     const outcome = await script(`return {
       confirmed:document.querySelector('[data-transaction-receipt]')?.textContent.includes('Transaction confirmed'),
@@ -392,7 +392,7 @@ export async function participationFromUi(seed) {
     const label = optedIn ? 'Volunteer to verify' : 'Stop new assignments';
     await wait(`[...document.querySelectorAll('button')].some(b => b.textContent.trim() === ${JSON.stringify(label)} && !b.disabled)`);
     await click(label);
-    hashes.push(await confirmedUiAction(account, optedIn ? 'VerifierOptIn' : 'VerifierOptOut'));
+    hashes.push(await waitForConfirmedUiAction(account, optedIn ? 'VerifierOptIn' : 'VerifierOptOut'));
     await until(async () => (await rpc('verification_status', {account})).verifier_opted_in === optedIn);
     await click('Start another');
     await wait(`!document.querySelector('[data-transaction-receipt]')`);
@@ -422,7 +422,7 @@ export async function endorseWithReview(seed, target, amount, rawAmount) {
   await click('Endorse');
   await wait(`!!document.querySelector('[role="dialog"]')`);
   await click('Burn & Endorse');
-  const hash = await confirmedUiAction(account, 'Endorse');
+  const hash = await waitForConfirmedUiAction(account, 'Endorse');
   const after = await rpc('account_info', {account});
   assert.equal(BigInt(after.total_brn_burned) - BigInt(before.total_brn_burned), BigInt(rawAmount));
   assert((await rpc('verification_status', {account:target})).endorsers.includes(account));
@@ -527,7 +527,7 @@ async function reviewedIdentityAction(account, review, confirm, details, type) {
   await click(review);
   await wait(`!!document.querySelector('[role="dialog"]')`);
   await click(confirm);
-  const hash = await confirmedUiAction(account, type);
+  const hash = await waitForConfirmedUiAction(account, type);
   assert.equal((await rpc('block_info', {hash})).previous, before, `${type} form signed more than one block`);
   return hash;
 }

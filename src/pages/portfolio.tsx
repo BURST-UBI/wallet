@@ -14,7 +14,8 @@ import { Button } from "@/components/ui/button";
 import { HelpLabel } from "@/components/help-label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useWallet, useRpc } from "@/hooks/use-wallet";
+import { useWallet } from "@/hooks/use-wallet";
+import { useRpc } from "@/hooks/use-rpc";
 import { formatAmount, formatTimeRemaining, truncateAddress, cn } from "@/lib/utils";
 import type { TrstPortfolio, TrstBatch } from "@/lib/types";
 

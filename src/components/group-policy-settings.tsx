@@ -9,7 +9,7 @@ import { toast } from "sonner";
 export function GroupPolicySettings({onDraftChange}:{onDraftChange?:(dirty:boolean)=>void}) {
   const {groupPolicy}=useWallet();
   return <details className="settings-disclosure">
-    <summary><span>Group checks</span><span className="ml-auto text-caption text-muted-foreground">{!groupPolicy ? "Needs review" : groupPolicy.mode==="protocol" ? "Protocol only" : `${groupPolicy.groups.filter(group=>group.trust_directly!==false).length} trusted`}</span></summary>
+    <summary><span>Creator trust</span><span className="ml-auto text-caption text-muted-foreground">{!groupPolicy ? "Needs review" : groupPolicy.mode==="protocol" ? "Protocol only" : groupPolicy.mode==="personal" ? `${groupPolicy.trusted_creators?.length ?? 0} creators` : `${groupPolicy.groups.filter(group=>group.trust_directly!==false).length} trusted`}</span></summary>
     <GroupPolicyEditor key={JSON.stringify(groupPolicy)} saved={groupPolicy} onDraftChange={onDraftChange} />
   </details>;
 }
@@ -18,6 +18,7 @@ function GroupPolicyEditor({saved,onDraftChange}:{saved:GroupPolicy|null;onDraft
   const {setGroupPolicy}=useWallet();
   const [draft,setDraft]=useState<GroupPolicy>(()=>saved ?? defaultGroupPolicy);
   const [url,setUrl]=useState("");
+  const [creators,setCreators]=useState((saved?.trusted_creators ?? []).join("\n"));
   const [directory,setDirectory]=useState<GroupEndpoint[]|null>(null);
   const [page,setPage]=useState(0);
   const [error,setError]=useState("");
@@ -34,15 +35,15 @@ function GroupPolicyEditor({saved,onDraftChange}:{saved:GroupPolicy|null;onDraft
   async function save() {
     if (pending.current) return;
     const checked=readGroupPolicy(draft);
-    if (!checked) {setError("Trust at least one group directly, or use protocol checks only.");return;}
+    if (!checked) {setError("Add trusted creator addresses, select a group, or use protocol checks only.");return;}
     pending.current=true; setSaving(true); setError("");
     const request=generation.current;
     try {
       const validated=await invoke<GroupPolicy>("validate_group_policy",{policy:checked});
       if (generation.current!==request) return;
       const policy=readGroupPolicy(validated);
-      if (!policy) throw new Error("The saved group rules could not be validated.");
-      setGroupPolicy(policy); toast.success("Group rules saved");
+      if (!policy) throw new Error("The saved creator trust rules could not be validated.");
+      setGroupPolicy(policy); toast.success("Creator trust rules saved");
     } catch(error) {if (generation.current===request) setError(String(error));}
     finally {pending.current=false;if (generation.current===request) setSaving(false);}
   }
@@ -80,17 +81,27 @@ function GroupPolicyEditor({saved,onDraftChange}:{saved:GroupPolicy|null;onDraft
   }
 
   return <div className="space-y-5 pt-3">
-    {!saved && <p role="alert" className="field-error">Saved group rules could not be read. Automation is paused until you save valid rules.</p>}
+    {!saved && <p role="alert" className="field-error">Saved creator trust rules could not be read. Automation is paused until you save valid rules.</p>}
     <form className="space-y-4" onSubmit={event=>{event.preventDefault();void save();}}>
       <fieldset disabled={saving || loading} className="space-y-4">
         <div className="form-field">
           <label htmlFor={`${id}-mode`}>Automatic receive checks</label>
           <select id={`${id}-mode`} className="form-control min-h-11 px-3" value={draft.mode} onChange={event=>{setDraft({...draft,mode:event.target.value as GroupPolicy["mode"]});setError("");}}>
-            <option value="protocol">Protocol checks only</option><option value="any">Any trusted group per creator</option><option value="all">Every trusted group per creator</option>
+            <option value="protocol">Protocol checks only</option><option value="personal">Trusted creators only</option><option value="any">Any trusted group per creator</option><option value="all">Every trusted group per creator</option>
           </select>
-          <p className="field-help">Group checks apply to original BRN creators, not just the sender. Manual acceptance stays available.</p>
+          <p className="field-help">Trust checks apply to every original BRN creator whose value survives, regardless of the sender. Manual acceptance stays available.</p>
         </div>
-        {draft.mode!=="protocol" && <>
+        {draft.mode==="personal" && <div className="form-field">
+          <label htmlFor={`${id}-creators`}>Trusted original creators</label>
+          <textarea id={`${id}-creators`} className="form-control min-h-32 p-3 text-base" value={creators} spellCheck={false} autoComplete="off"
+            aria-invalid={!!error} aria-describedby={`${id}-creators-help${error ? ` ${id}-error` : ""}`} onChange={event=>{
+              setCreators(event.target.value);
+              setDraft({...draft,trusted_creators:[...new Set(event.target.value.split(/\s+/).filter(Boolean))]});
+              setError("");
+            }} onKeyDown={event=>{if ((event.ctrlKey || event.metaKey) && event.key==="Enter") {event.preventDefault();void save();}}} />
+          <p id={`${id}-creators-help`} className="field-help">One BURST address per line, up to 256. Every surviving creator must be listed. Other payments stay pending. No group service is contacted.</p>
+        </div>}
+        {(draft.mode==="any" || draft.mode==="all") && <>
           <div className="form-field">
             <label htmlFor={`${id}-depth`}>Groups they vouch for</label>
             <select id={`${id}-depth`} className="form-control min-h-11 px-3" value={draft.max_hops??0} aria-describedby={`${id}-depth-help`} onChange={event=>setDraft({...draft,max_hops:Number(event.target.value)})}>
@@ -117,11 +128,11 @@ function GroupPolicyEditor({saved,onDraftChange}:{saved:GroupPolicy|null;onDraft
           </li>)}</ul> : <p className="field-help">Load a directory below, then select the groups you trust.</p>}
           <p className="field-help">Queries share original creator addresses. {(draft.max_hops??0)>0 && "Unchecked groups are contacted only through a trusted group's endorsement. "}Membership is checked live for each payment.</p>
         </>}
-        {error && <p role="alert" className="field-error break-words">{error}</p>}
-        <Button type="submit" variant="secondary" disabled={!dirty}>{saving ? "Saving…" : "Save group rules"}</Button>
+        {error && <p id={`${id}-error`} role="alert" className="field-error break-words">{error}</p>}
+        <Button type="submit" variant="secondary" disabled={!dirty}>{saving ? "Saving…" : "Save trust rules"}</Button>
       </fieldset>
     </form>
-    {draft.mode!=="protocol" && <div className="space-y-3 border-t pt-4">
+    {(draft.mode==="any" || draft.mode==="all") && <div className="space-y-3 border-t pt-4">
       <form noValidate className="form-field" onSubmit={event=>{event.preventDefault();void loadDirectory();}}>
         <label htmlFor={`${id}-directory`}>Group directory URL</label>
         <div className="field-action"><Input id={`${id}-directory`} type="url" value={url} onChange={event=>{setUrl(event.target.value);setDirectoryError("");}} disabled={loading || saving} spellCheck={false} autoComplete="off" aria-invalid={!!directoryError} /><Button type="submit" variant="outline" disabled={loading || saving}>{loading ? "Loading…" : "Load directory"}</Button></div>

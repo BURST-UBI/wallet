@@ -3,7 +3,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { useWallet } from "./use-wallet";
 import { toast } from "sonner";
 
-// Survives component remounts: never queue overlapping automatic signers.
+// Share one in-flight automation guard across hook instances and remounts.
 let running = false;
 export function useAutomation() {
   const { address, isLocked, watchOnly, rpcUrl, autoAccept, trustedSenders, mergeLevel, groupPolicy, setGroupHolds } = useWallet();
@@ -22,7 +22,7 @@ export function useAutomation() {
     }
     async function poll() {
       if (cancelled || running || !isTauri() || isLocked || watchOnly || !address || (!autoAccept && !mergeLevel)) return;
-      if (!groupPolicy) {setError("Saved group rules could not be read. Review and save them in Settings before automation can run.");return;}
+      if (!groupPolicy) {setError("Saved creator trust rules could not be read. Review and save them in Settings before automation can run.");return;}
       running = true;
       let session: string | null = null;
       try {

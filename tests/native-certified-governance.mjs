@@ -53,8 +53,7 @@ if (process.env.NATIVE_GOVERNANCE_READBACK) {
   console.log('PASS installed governance readback: certified outcomes, constitution, parameter values, restored verification and no signing');
 } else {
 const verifiedCount = (await rpc('node_info')).verified_count;
-// Founder + 49 helpers + the native consumer. The former extra CLI consumer
-// was duplicate setup, not a governance prerequisite; quorum stays computed.
+// The fixture includes the founder, 49 helpers and the native consumer.
 assert(verifiedCount >= 51, 'Certified governance requires completed native onboarding');
 const report = process.env.NATIVE_RESULT_PATH;
 const resumePath = process.env.NATIVE_GOVERNANCE_RESUME_ADOPTED;
@@ -68,7 +67,7 @@ if (resumed) {
 const progress = resumed ?? { numeric:null, amendment:null, votes:[] };
 await writeFile(`${report}.progress`, JSON.stringify(progress), {flag:'wx'});
 async function save() { await writeFile(`${report}.progress`, JSON.stringify(progress, null, 2)); }
-async function phase(hash, wanted) {
+async function waitForPhase(hash, wanted) {
   let last;
   let observed;
   try {
@@ -129,10 +128,10 @@ await save();
 const numericAlreadyActivated = existingNumeric?.phase === 'Activated'
   && existingNumeric.phase_projected === false;
 if (!resumed && !numericAlreadyActivated) {
-  await phase(numeric, 'Exploration');
+  await waitForPhase(numeric, 'Exploration');
   await supportSelectedProposal(owner.address, numeric);
 }
-await phase(numeric, 'Activated');
+await waitForPhase(numeric, 'Activated');
 const params = await rpc('protocol_params');
 assert.equal(params.governable_parameters.find(row => row.name === parameter).current, newValue);
 console.log(resumed || numericAlreadyActivated ? 'PASS resumed numeric proposal remains certified and active'
@@ -157,7 +156,7 @@ const quorumBps = Number(params.governable_parameters.find(row => row.name === '
 const directCount = Math.max(20, Math.ceil(verifiedCount * quorumBps / 10000) - 1);
 const expectedVotes = resumed ? progress.votes.length : directCount + 1;
 if (resumed) {
-  const certified = await phase(amendment, 'Activated');
+  const certified = await waitForPhase(amendment, 'Activated');
   assert.equal(certified.votes_yea, expectedVotes, 'Progress record must match the certified tally');
   assert(progress.votes.includes(delegator.address));
 } else {
@@ -172,7 +171,7 @@ if (resumed) {
   const incoming = await invoke('get_scoped_delegations', {rpcUrl, incoming:true, scope:null, cursor:null});
   const entry = incoming.entries.find(value => value.owner === delegator.address && value.scope.value === amendment);
   assert(entry?.confirmed);
-  await phase(amendment, 'Exploration');
+  await waitForPhase(amendment, 'Exploration');
   await supportDelegatedProposal(owner.address, entry, published);
   progress.votes.push(delegator.address);
   await save();
@@ -185,7 +184,7 @@ if (resumed) {
     await save();
   }
 }
-const outcome = await phase(amendment, 'Activated');
+const outcome = await waitForPhase(amendment, 'Activated');
 assert.equal(outcome.votes_yea, expectedVotes);
 assert.equal(outcome.votes_nay, 0);
 const document = await rpc('consti');

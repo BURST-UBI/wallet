@@ -45,18 +45,18 @@ export default function SettingsPage() {
   const [changingRep, setChangingRep] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportPassword, setExportPassword] = useState("");
-  const [exportedSeed, setExportedSeed] = useState<string | null>(null);
+  const [exportedPrivateKey, setExportedPrivateKey] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [showSeed, setShowSeed] = useState(false);
+  const [showPrivateKey, setShowPrivateKey] = useState(false);
   const [senderRules, setSenderRules] = useState(trustedSenders.join("\n"));
 
   function handleExportOpenChange(open: boolean) {
     setExportDialogOpen(open);
     if (!open) {
       exportSession.current++;
-      setExportedSeed(null);
+      setExportedPrivateKey(null);
       setExportPassword("");
-      setShowSeed(false);
+      setShowPrivateKey(false);
     }
   }
 
@@ -112,10 +112,10 @@ export default function SettingsPage() {
     const session = exportSession.current;
     setExporting(true);
     try {
-      const seed = await invoke<string>("export_private_key", {
+      const privateKey = await invoke<string>("export_private_key", {
         password: exportPassword,
       });
-      if (session === exportSession.current) setExportedSeed(seed);
+      if (session === exportSession.current) setExportedPrivateKey(privateKey);
     } catch (e) {
       toast.error("Export failed", { description: String(e) });
     } finally {
@@ -210,19 +210,19 @@ export default function SettingsPage() {
               Enter the encrypted file's password to reveal its hex private key. This is not your 24-word phrase. Restore it using Import Private Key.
             </DialogDescription>
           </DialogHeader>
-          {exportedSeed ? (
+          {exportedPrivateKey ? (
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <code className="flex-1 break-all rounded-md bg-muted p-3 font-mono text-caption">
-                  {showSeed ? exportedSeed : "•".repeat(64)}
+                  {showPrivateKey ? exportedPrivateKey : "•".repeat(64)}
                 </code>
                 <Button
                   variant="ghost"
                   size="icon"
-                  aria-label={showSeed ? "Hide private key" : "Show private key"}
-                  onClick={() => setShowSeed(!showSeed)}
+                  aria-label={showPrivateKey ? "Hide private key" : "Show private key"}
+                  onClick={() => setShowPrivateKey(!showPrivateKey)}
                 >
-                  {showSeed ? (
+                  {showPrivateKey ? (
                     <EyeOff className="h-4 w-4" />
                   ) : (
                     <Eye className="h-4 w-4" />

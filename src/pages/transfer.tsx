@@ -17,7 +17,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useWallet, useRpc } from "@/hooks/use-wallet";
+import { useWallet } from "@/hooks/use-wallet";
+import { useRpc } from "@/hooks/use-rpc";
 import { formatAmount } from "@/lib/utils";
 import { parseAmount } from "@/lib/brn";
 import type { TrstPortfolio } from "@/lib/types";
@@ -81,12 +82,12 @@ export default function TransferPage() {
   async function handleConfirm() {
     const err = validate();
     if (err) { setFormError(err); setConfirmOpen(false); return; }
-    const completed = await transaction.submit({
+    const showReceipt = await transaction.submit({
       to: recipient.trim(),
       amount: parseAmount(amount),
       origin: sourceFor(parseAmount(amount)),
     }, reviewContext.current);
-    if (completed) {
+    if (showReceipt) {
       setConfirmOpen(false);
       setRecipient("");
       setAmount("");

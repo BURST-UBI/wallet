@@ -69,17 +69,17 @@ function OnboardingFlow() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [keystorePath, setKeystorePath] = useState("");
   const [savePath, setSavePath] = useState("");
-  const [showSave, setShowSave] = useState(false);
-  const [groupDraft, setGroupDraft] = useState(false);
+  const [showKeystoreSave, setShowKeystoreSave] = useState(false);
+  const [hasGroupDraft, setHasGroupDraft] = useState(false);
   const { setAddress, setLocked, setVerificationState, setWatchOnly } = useWallet();
   const navigate = useNavigate();
 
   useEffect(() => {
     const heading = document.querySelector<HTMLElement>(".onboarding-shell h1, .onboarding-shell h2, .onboarding-shell [data-slot='card-title']");
     if (heading) { heading.tabIndex = -1; heading.focus({ preventScroll: true }); }
-  }, [step, showSave]);
+  }, [step, showKeystoreSave]);
 
-  function finalize(info: WalletInfo) {
+  function finishSetup(info: WalletInfo) {
     setRecoveryPhrase(null);
     setWalletInfo({ address: info.address, verification_state: info.verification_state });
     setMnemonic("");
@@ -103,7 +103,7 @@ function OnboardingFlow() {
     setLoading(true);
     setWatchError("");
     try {
-      finalize(await invoke<WalletInfo>("watch_wallet", { address: watchAddress.trim() }));
+      finishSetup(await invoke<WalletInfo>("watch_wallet", { address: watchAddress.trim() }));
     } catch (error) { setWatchError(String(error)); }
     finally { operationPending.current = false; setLoading(false); }
   }
@@ -118,7 +118,7 @@ function OnboardingFlow() {
       setRecoveryPhrase(info.recovery_phrase);
       setBackupConfirmed(false);
       setWalletInfo(info);
-      setShowSave(true);
+      setShowKeystoreSave(true);
     } catch (e) {
       toast.error(String(e));
     } finally {
@@ -137,7 +137,7 @@ function OnboardingFlow() {
         phrase: mnemonic.trim(),
       });
       setWalletInfo(info);
-      setShowSave(true);
+      setShowKeystoreSave(true);
     } catch (e) {
       toast.error(String(e));
     } finally {
@@ -156,7 +156,7 @@ function OnboardingFlow() {
         hexKey: privateKey.trim(),
       });
       setWalletInfo(info);
-      setShowSave(true);
+      setShowKeystoreSave(true);
     } catch (e) {
       toast.error(String(e));
     } finally {
@@ -184,7 +184,7 @@ function OnboardingFlow() {
         path: savePath.trim(),
       });
       toast.success("Keystore saved");
-      if (walletInfo) finalize(walletInfo);
+      if (walletInfo) finishSetup(walletInfo);
     } catch (e) {
       toast.error(String(e));
     } finally {
@@ -195,7 +195,7 @@ function OnboardingFlow() {
 
   function handleSkipSave() {
     if (recoveryPhrase && !backupConfirmed) { toast.error("Record your recovery phrase first"); return; }
-    if (walletInfo) finalize(walletInfo);
+    if (walletInfo) finishSetup(walletInfo);
   }
 
   async function handleLoadKeystore() {
@@ -228,7 +228,7 @@ function OnboardingFlow() {
     setLoading(true);
     try {
       const info = await invoke<WalletInfo>("unlock_wallet", { password });
-      finalize(info);
+      finishSetup(info);
     } catch (e) {
       toast.error(String(e));
     } finally {
@@ -253,11 +253,11 @@ function OnboardingFlow() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <GroupPolicySettings onDraftChange={setGroupDraft} />
-              {groupDraft && <p className="text-caption text-muted-foreground">Save your group rules before continuing.</p>}
+              <GroupPolicySettings onDraftChange={setHasGroupDraft} />
+              {hasGroupDraft && <p className="text-caption text-muted-foreground">Save your group rules before continuing.</p>}
               <Button
                 className="w-full"
-                disabled={groupDraft}
+                disabled={hasGroupDraft}
                 onClick={() => navigate("/verification")}
               >
                 <ShieldCheck className="h-4 w-4" />
@@ -266,7 +266,7 @@ function OnboardingFlow() {
               <Button
                 type="button" variant="ghost"
                 className="w-full"
-                disabled={groupDraft}
+                disabled={hasGroupDraft}
                 onClick={() => navigate("/")}
               >
                 Go to Dashboard
@@ -278,7 +278,7 @@ function OnboardingFlow() {
     );
   }
 
-  if (showSave && walletInfo) {
+  if (showKeystoreSave && walletInfo) {
     return (
       <div className="flex min-h-dvh items-center justify-center p-4">
         <div className="mx-auto w-full max-w-md">

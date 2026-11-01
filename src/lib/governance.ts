@@ -4,7 +4,7 @@ import { parameterDisplay, parameterUnitForName } from "./parameters";
 const phases: Record<string, string> = {
   Proposal: "Collecting support", Exploration: "Voting", Cooldown: "Discussion",
   Promotion: "Legacy proposal", Activation: "Scheduled", Activated: "In effect",
-  Rejected: "Not passed", Withdrawn: "Withdrawn", Conflicted: "Could not apply",
+  Rejected: "Not passed", Withdrawn: "Withdrawn", Vetoed: "Vetoed during bootstrap", Conflicted: "Could not apply",
 };
 
 export function governancePhaseLabel(proposal: Pick<Proposal, "phase" | "phase_projected">) {

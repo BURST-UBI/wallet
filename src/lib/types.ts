@@ -14,8 +14,8 @@ export interface TrstBalance {
 
 export interface AccountInfo {
   address: string;
-  /** Spendable BRN computed by account_info, including rate history and stakes.
-   * Unlike the similarly named state-block field, this is NOT a spent odometer. */
+  /** Available BRN computed by account_info from accrual, burns and stakes.
+   * The block RPC uses the same field name for cumulative spending. */
   brn_balance: string;
   trst_balance: string;
   trst_expired: string;

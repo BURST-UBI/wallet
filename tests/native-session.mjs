@@ -9,6 +9,7 @@ import { resolve, join, basename, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+const windows = process.platform === 'win32';
 const cancellation = new AbortController();
 for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => cancellation.abort(new Error(signal)));
 const scopedFixture = process.argv.includes('--scoped-delegation-fixture');
@@ -20,6 +21,7 @@ const expiryReturnFixture = process.argv.includes('--expiry-return-fixture');
 const expiredMergeFixture = process.argv.includes('--expired-merge-fixture');
 const groupsFixture = process.argv.includes('--groups-only');
 const signerOnly = process.argv.includes('--signer-only');
+const walletOnly = process.argv.includes('--wallet-only');
 const paymentsOnly = process.argv.includes('--payments-only');
 const devicePhase = process.argv.includes('--device-phase');
 const deviceHandoff = process.argv.includes('--device-handoff-only') || devicePhase;
@@ -57,6 +59,21 @@ const certifiedReadiness = process.argv.includes('--certified-readiness');
 const historyFixture = process.argv.includes('--history-only');
 const legacyMigration = process.argv.includes('--legacy-migration-only');
 const embedded = process.argv.includes('--embedded') || process.env.NATIVE_EMBEDDED === '1';
+if (windows) {
+  assert((signerOnly || walletOnly) && embedded && !process.env.NATIVE_RESUME_DATA_DIR,
+    'Windows currently supports fresh embedded signer or wallet-core journeys; other fixtures require platform-specific profile handling');
+  assert(process.env.USERPROFILE && process.env.APPDATA && process.env.LOCALAPPDATA,
+    'Windows user profile is not loaded');
+  assert(process.env.NATIVE_WINDOWS_ISOLATED_PROFILE, 'Declare the dedicated Windows validation profile');
+  assert.equal(resolve(process.env.NATIVE_WINDOWS_ISOLATED_PROFILE).toLowerCase(),
+    resolve(process.env.USERPROFILE).toLowerCase(), 'Run under the declared isolated Windows account');
+  assert(!/systemprofile/i.test(process.env.USERPROFILE), 'SYSTEM profile is not an isolated desktop account');
+  assert(process.env.NATIVE_WEBDRIVER, 'Set NATIVE_WEBDRIVER to the matching Edge driver');
+  for (const directory of new Set([process.env.APPDATA, process.env.LOCALAPPDATA])) {
+    await assert.rejects(stat(join(directory, 'com.burst.wallet')), { code: 'ENOENT' },
+      'Fresh wallet acceptance requires an unused wallet profile; retain existing data for diagnosis');
+  }
+}
 const returnRecovery = process.argv.includes('--return-recovery');
 if (returnRecovery) {
   assert(process.env.NATIVE_RESUME_DATA_DIR, 'Return recovery requires the original app profile');
@@ -65,7 +82,7 @@ if (returnRecovery) {
 const certifiedFixture = certifiedOnboarding || certifiedLifecycle || certifiedGovernance || certifiedExclusion || certifiedReadiness;
 assert([certifiedOnboarding, certifiedLifecycle, certifiedGovernance, certifiedExclusion, certifiedReadiness].filter(Boolean).length <= 1, 'Choose one certified journey');
 const externalFixture = scopedFixture || constitutionFixture || parameterFixture || appealFixture || offlinePanelFixture || expiryReturnFixture || expiredMergeFixture || certifiedFixture || forkFixture || returnRecovery || historyFixture || devicePhase;
-assert([scopedFixture,constitutionFixture,parameterFixture,appealFixture,expiryReturnFixture,expiredMergeFixture,groupsFixture,signerOnly,deviceHandoff,graphFixture,offlineFixture,offlineProposalReadback,certifiedFixture,forkFixture,returnRecovery,historyFixture,legacyMigration].filter(Boolean).length<=1, 'Choose one desktop fixture');
+assert([scopedFixture,constitutionFixture,parameterFixture,appealFixture,expiryReturnFixture,expiredMergeFixture,groupsFixture,signerOnly,walletOnly,deviceHandoff,graphFixture,offlineFixture,offlineProposalReadback,certifiedFixture,forkFixture,returnRecovery,historyFixture,legacyMigration].filter(Boolean).length<=1, 'Choose one desktop fixture');
 if (externalFixture) {
   assert(process.env.NATIVE_FIXTURE_RPC_URL && (scopedFixture ? process.env.NATIVE_PROPOSAL : historyFixture ? process.env.NATIVE_HISTORY_REFERENCE : process.env.NATIVE_RESULT_PATH),
     'Desktop tests must be started by the disposable Rust node fixture');
@@ -73,17 +90,19 @@ if (externalFixture) {
   assert.equal(endpoint.hostname, '127.0.0.1');
   assert.equal(endpoint.protocol, 'http:');
 }
-const deadline = externalFixture || groupsFixture || signerOnly || deviceHandoff || graphFixture || offlineFixture || offlineProposalReadback || legacyMigration
+const deadline = externalFixture || groupsFixture || signerOnly || walletOnly || deviceHandoff || graphFixture || offlineFixture || offlineProposalReadback || legacyMigration
   ? setTimeout(() => cancellation.abort(new Error('Native wallet test timed out')), certifiedFixture ? 600000 : 180000)
   : null;
 const evidence = await mkdtemp(join(tmpdir(), 'burst-native-wallet-'));
 assert(!process.env.NATIVE_RESUME_DATA_DIR || certifiedLifecycle || certifiedOnboarding || numericGovernanceRecovery || returnRecovery || exclusionFollowthrough || exclusionRecovery || (devicePhase && ['recover','stale'].includes(process.env.NATIVE_DEVICE_PHASE)), 'Existing app data requires an explicit recovery journey');
 const env = {
   ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('BURST_'))),
-  XDG_CONFIG_HOME: join(evidence, 'config'),
-  XDG_DATA_HOME: process.env.NATIVE_RESUME_DATA_DIR || join(evidence, 'data'),
-  XDG_CACHE_HOME: join(evidence, 'cache'),
-  GDK_BACKEND: 'x11',
+  ...(!windows && {
+    XDG_CONFIG_HOME: join(evidence, 'config'),
+    XDG_DATA_HOME: process.env.NATIVE_RESUME_DATA_DIR || join(evidence, 'data'),
+    XDG_CACHE_HOME: join(evidence, 'cache'),
+    GDK_BACKEND: 'x11',
+  }),
   NATIVE_EVIDENCE: evidence,
   NATIVE_OFFLINE_RECEIVE: offlineReceiveFixture ? '1' : '0',
   NATIVE_OFFLINE_EXISTING_RECEIPT: offlineExistingReceipt ? '1' : '0',
@@ -97,7 +116,7 @@ const env = {
   NATIVE_EXPIRED_MERGE: expiredMergeFixture ? '1' : '0',
 };
 delete env.WAYLAND_DISPLAY;
-for (const path of [env.XDG_CONFIG_HOME, env.XDG_DATA_HOME, env.XDG_CACHE_HOME]) {
+for (const path of windows ? [] : [env.XDG_CONFIG_HOME, env.XDG_DATA_HOME, env.XDG_CACHE_HOME]) {
   if (path === process.env.NATIVE_RESUME_DATA_DIR) {
     assert((await stat(path)).isDirectory(), 'Resumed app data must already exist');
   } else {
@@ -108,7 +127,7 @@ if (legacyMigration) {
   const { seedLegacyProfile } = await import('./native-legacy-migration.mjs');
   await seedLegacyProfile(env.XDG_DATA_HOME, evidence);
 }
-async function port() {
+async function allocatePort() {
   const server = createServer();
   await new Promise((resolveReady, reject) => {
     server.once('error', reject);
@@ -118,14 +137,14 @@ async function port() {
   await new Promise(resolveClosed => server.close(resolveClosed));
   return number;
 }
-const rpcPort = await port();
-const driverPort = await port();
-const nativePort = await port();
+const rpcPort = await allocatePort();
+const driverPort = await allocatePort();
+const nativePort = await allocatePort();
 const challengePeer = offlineFixture && process.env.NATIVE_OFFLINE_ACTION === 'challenge' && !offlineChallengeBaseline;
-const challengeP2pPort = challengePeer ? await port() : 0;
+const challengeP2pPort = challengePeer ? await allocatePort() : 0;
 assert.equal(new Set([rpcPort, driverPort, nativePort]).size, 3, 'port allocation collided; rerun');
 const rpcUrl = externalFixture ? process.env.NATIVE_FIXTURE_RPC_URL : `http://127.0.0.1:${rpcPort}`;
-const server = `http://127.0.0.1:${driverPort}`;
+const driverUrl = `http://127.0.0.1:${driverPort}`;
 const children = [];
 const logs = [];
 let session;
@@ -134,6 +153,17 @@ let frontendServer;
 async function stopOwned(child) {
   if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
   const exited = new Promise(resolveExit => child.once('exit', resolveExit));
+  if (windows) {
+    const stop = spawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'inherit' });
+    const code = await new Promise((resolveExit, reject) => {
+      stop.once('error', reject);
+      stop.once('exit', resolveExit);
+    });
+    assert(code === 0 || child.exitCode !== null || child.signalCode !== null,
+      'Failed to stop owned native-test process tree');
+    await exited;
+    return;
+  }
   process.kill(-child.pid, 'SIGTERM');
   const timer = setTimeout(() => {
     if (child.exitCode === null && child.signalCode === null) process.kill(-child.pid, 'SIGKILL');
@@ -145,12 +175,12 @@ async function stopOwned(child) {
 async function launch(binary, args, logName, childEnv = env) {
   const log = await open(join(evidence, logName), 'w', 0o600);
   logs.push(log);
-  const child = spawn(binary, args, { env: childEnv, detached: true, stdio: ['ignore', log.fd, log.fd] });
+  const child = spawn(binary, args, { env: childEnv, detached: !windows, stdio: ['ignore', log.fd, log.fd] });
   child.once('error', error => { child.launchError = error; });
   children.push(child);
   return child;
 }
-async function untilReady(child, check) {
+async function waitForReady(child, check) {
   for (let attempt = 0; attempt < 150; attempt++) {
     cancellation.signal.throwIfAborted();
     if (child.launchError) throw child.launchError;
@@ -161,7 +191,7 @@ async function untilReady(child, check) {
   assert.fail(`Readiness timed out; see ${evidence}`);
 }
 async function driverCall(path, body) {
-  const response = await fetch(`${server}${path}`, {
+  const response = await fetch(`${driverUrl}${path}`, {
     method: body === undefined ? 'GET' : 'POST',
     headers: { 'Content-Type': 'application/json' },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -227,7 +257,7 @@ try {
     '--rpc-bind', '127.0.0.1', '--rpc-port', String(rpcPort), '--disable-upnp',
     '--representative-key-file', join(evidence, 'public-dev.key'), 'node', 'run',
   ], 'daemon.log');
-  await untilReady(daemon, async () => {
+  await waitForReady(daemon, async () => {
     let response;
     try {
       response = await fetch(rpcUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -241,14 +271,14 @@ try {
   });
   if (challengePeer) {
     await writeFile(join(evidence,'public-challenge-peer.key'),'51'.repeat(32),{mode:0o600});
-    const peerRpcPort=await port();
+    const peerRpcPort=await allocatePort();
     const peer=await launch(process.env.BURST_DAEMON || resolve(root,'../protocol/target/release/burst-daemon'),[
       '--network','dev','--data-dir',join(evidence,'peer-ledger'),'--port','0',
       '--rpc-bind','127.0.0.1','--rpc-port',String(peerRpcPort),'--disable-upnp',
       '--bootstrap-peers',`127.0.0.1:${challengeP2pPort}`,
       '--representative-key-file',join(evidence,'public-challenge-peer.key'),'node','run',
     ],'challenge-peer.log');
-    await untilReady(peer,async()=>{
+    await waitForReady(peer,async()=>{
       try {
         const response=await fetch(`http://127.0.0.1:${peerRpcPort}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'node_info'}),signal:AbortSignal.timeout(1000)});
         const info=(await response.json()).result;
@@ -293,7 +323,7 @@ try {
     console.log('PASS retained offline proposal: original hash and exact content confirmed, one ledger action, byte-exact archived journal and no pending action or attempt marker');
     }
   } else {
-  const application = process.env.WALLET_BINARY || resolve(root, 'src-tauri/target/debug/burst-wallet-gui');
+  const application = process.env.WALLET_BINARY || resolve(root, `src-tauri/target/debug/burst-wallet-gui${windows ? '.exe' : ''}`);
   let driverEnv = env;
   if (appealFixture || offlinePanelFixture || expiryReturnFixture || expiredMergeFixture) {
     const fixtureTime = appealFixture || offlinePanelFixture ? process.env.NATIVE_APPEAL_TIME : process.env.NATIVE_RETURN_TIME;
@@ -305,13 +335,14 @@ try {
       FAKETIME: fixtureTime, FAKETIME_FMT: '%s',
       FAKETIME_ONLY_CMDS: basename(application), FAKETIME_DONT_FAKE_MONOTONIC: '1', NO_FAKE_STAT: '1' };
   }
-  const driverArgs = ['-a', '-s', '-screen 0 1440x1000x24',
-    process.env.TAURI_DRIVER || 'tauri-driver', '--port', String(driverPort),
-    '--native-port', String(nativePort), '--native-driver', '/usr/bin/WebKitWebDriver'];
+  const driverBinary = process.env.TAURI_DRIVER || 'tauri-driver';
+  const nativeArgs = ['--port', String(driverPort), '--native-port', String(nativePort),
+    '--native-driver', windows ? process.env.NATIVE_WEBDRIVER : '/usr/bin/WebKitWebDriver'];
+  const driverArgs = windows ? nativeArgs : ['-a', '-s', '-screen 0 1440x1000x24', driverBinary, ...nativeArgs];
   let activeEnv = env;
-  let driver = await launch('xvfb-run', driverArgs, 'webdriver.log', driverEnv);
-  await untilReady(driver, async () => {
-    try { return (await fetch(`${server}/status`, { signal: AbortSignal.timeout(1000) })).ok; }
+  let driver = await launch(windows ? driverBinary : 'xvfb-run', driverArgs, 'webdriver.log', driverEnv);
+  await waitForReady(driver, async () => {
+    try { return (await fetch(`${driverUrl}/status`, { signal: AbortSignal.timeout(1000) })).ok; }
     catch { return false; }
   });
   const created = await driverCall('/session', { capabilities: { alwaysMatch: {
@@ -323,7 +354,7 @@ try {
   const rendered = async () => (await driverCall(`/session/${session}/execute/sync`, {
     script: 'return !!window.__TAURI_INTERNALS__?.invoke && !!document.querySelector("button")', args: [],
   })) === true;
-  await untilReady(driver, rendered);
+  await waitForReady(driver, rendered);
   if (embedded) {
     const url = await driverCall(`/session/${session}/execute/sync`, {
       script: 'return location.href', args: [],
@@ -342,11 +373,11 @@ try {
     args: [rpcUrl],
   });
   await driverCall(`/session/${session}/refresh`, {});
-  await untilReady(driver, rendered);
+  await waitForReady(driver, rendered);
   const tests = delegationReview ? ['native-delegation-review.mjs'] : certifiedReadiness ? ['native-certified-readiness.mjs'] : historyFixture ? ['native-history.mjs'] : certifiedGovernance ? ['native-certified-governance.mjs'] : certifiedLifecycle ? ['native-certified-lifecycle.mjs'] : certifiedFixture ? ['native-certified-onboarding.mjs'] : expiryReturnFixture ? ['native-expiry-return.mjs'] : appealFixture ? ['native-appeal.mjs'] : graphFixture ? ['native-group-graph.mjs'] : groupsFixture ? ['native-groups.mjs'] : scopedFixture ? ['native-scoped-delegation.mjs'] : constitutionFixture || parameterFixture ? ['native-constitution.mjs'] : paymentsOnly || expiredMergeFixture ? ['native-payments.mjs'] : ['native-wallet.mjs', 'native-onboarding.mjs', 'native-signer.mjs', 'native-payments.mjs', 'native-ui-payment.mjs', 'native-return.mjs', 'native-automation.mjs', 'native-groups.mjs'];
-  for (const [index, test] of (deviceHandoff ? Array(devicePhase ? 1 : 4).fill('native-device-handoff.mjs') : exclusionRestart ? ['native-certified-exclusion.mjs', 'native-certified-exclusion.mjs'] : signerOnly ? ['native-signer.mjs'] : legacyMigration ? ['native-legacy-migration.mjs', 'native-legacy-migration.mjs'] : returnRecovery ? ['native-return.mjs', 'native-automation.mjs', 'native-groups.mjs'] : forkFixture ? ['native-offline-fork.mjs', 'native-offline-fork.mjs'] : certifiedExclusion ? [process.env.NATIVE_RECOVER_ACTION ? 'native-certified-action-recovery.mjs' : 'native-certified-exclusion.mjs'] : onlineRecovery ? ['native-offline.mjs', 'native-offline.mjs'] : offlineFixture ? ['native-offline.mjs', 'native-offline.mjs', 'native-offline.mjs'] : tests).entries()) {
+  for (const [index, test] of (deviceHandoff ? Array(devicePhase ? 1 : 4).fill('native-device-handoff.mjs') : exclusionRestart ? ['native-certified-exclusion.mjs', 'native-certified-exclusion.mjs'] : signerOnly ? ['native-signer.mjs'] : walletOnly ? ['native-wallet.mjs'] : legacyMigration ? ['native-legacy-migration.mjs', 'native-legacy-migration.mjs'] : returnRecovery ? ['native-return.mjs', 'native-automation.mjs', 'native-groups.mjs'] : forkFixture ? ['native-offline-fork.mjs', 'native-offline-fork.mjs'] : certifiedExclusion ? [process.env.NATIVE_RECOVER_ACTION ? 'native-certified-action-recovery.mjs' : 'native-certified-exclusion.mjs'] : onlineRecovery ? ['native-offline.mjs', 'native-offline.mjs'] : offlineFixture ? ['native-offline.mjs', 'native-offline.mjs', 'native-offline.mjs'] : tests).entries()) {
     if ((deviceHandoff || offlineFixture || forkFixture || legacyMigration || exclusionRestart) && index > 0) {
-      const closed = await fetch(`${server}/session/${session}`, { method: 'DELETE', signal: AbortSignal.timeout(5000) });
+      const closed = await fetch(`${driverUrl}/session/${session}`, { method: 'DELETE', signal: AbortSignal.timeout(5000) });
       assert(closed.ok, 'Could not close the first native app session');
       session = null;
       if (deviceHandoff && (index === 1 || index === 3)) {
@@ -356,13 +387,13 @@ try {
           XDG_CACHE_HOME:join(evidence,'device-b-cache')};
         if (index === 1) for (const path of [activeEnv.XDG_DATA_HOME,activeEnv.XDG_CONFIG_HOME,activeEnv.XDG_CACHE_HOME]) await mkdir(path,{mode:0o700});
         driver = await launch('xvfb-run', driverArgs, `webdriver-device-${index}.log`, activeEnv);
-        await untilReady(driver, async () => {
-          try { return (await fetch(`${server}/status`, {signal:AbortSignal.timeout(1000)})).ok; }
+        await waitForReady(driver, async () => {
+          try { return (await fetch(`${driverUrl}/status`, {signal:AbortSignal.timeout(1000)})).ok; }
           catch { return false; }
         });
       }
       if (forkFixture) {
-        await untilReady(driver, async () => {
+        await waitForReady(driver, async () => {
           try { return !!JSON.parse(await readFile(`${process.env.NATIVE_RESULT_PATH}.ready`, 'utf8')).winner; }
           catch (error) { if (error.code === 'ENOENT') return false; throw error; }
         });
@@ -373,14 +404,14 @@ try {
       session = restarted.sessionId;
       assert(session);
       await driverCall(`/session/${session}/timeouts`, { script: 120000, pageLoad: 30000 });
-      await untilReady(driver, rendered);
+      await waitForReady(driver, rendered);
     }
     const stepPath = join(evidence, `${index}-${test}.log`);
     const stepLog = await open(stepPath, 'wx', 0o600);
     console.log(`Running ${test}; durable output: ${stepPath}`);
     try {
       const child = spawn(process.execPath, [fileURLToPath(new URL(test, import.meta.url))], {
-        cwd: root, env: { ...activeEnv, NODE_RPC_URL: rpcUrl, WEBDRIVER_URL: server, WEBDRIVER_SESSION: session,
+        cwd: root, env: { ...activeEnv, NODE_RPC_URL: rpcUrl, WEBDRIVER_URL: driverUrl, WEBDRIVER_SESSION: session,
           ...(deviceHandoff ? {NATIVE_DEVICE_PHASE:devicePhase ? process.env.NATIVE_DEVICE_PHASE : ['prepare','takeover','recover','stale'][index]} : {}),
           ...(exclusionRestart ? { NATIVE_EXCLUSION_PHASE: ['prepare', 'recover'][index] } : {}),
           ...(exclusionFollowthrough ? { NATIVE_EXCLUSION_PHASE: 'followthrough' } : {}),
@@ -402,7 +433,7 @@ try {
   }
 } finally {
   if (deadline) clearTimeout(deadline);
-  if (session) await fetch(`${server}/session/${session}`, { method: 'DELETE', signal: AbortSignal.timeout(5000) })
+  if (session) await fetch(`${driverUrl}/session/${session}`, { method: 'DELETE', signal: AbortSignal.timeout(5000) })
     .catch(error => console.error('Session cleanup:', error.message));
   for (const child of children.reverse()) {
     await stopOwned(child);

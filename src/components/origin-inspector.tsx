@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useRpc } from "@/hooks/use-wallet";
+import { useRpc } from "@/hooks/use-rpc";
 import { Button } from "@/components/ui/button";
 
 interface OriginReport {

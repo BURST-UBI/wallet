@@ -31,6 +31,10 @@ pub fn run() {
                 .map_err(|_| std::io::Error::other("profile access already initialized"))?;
             app.state::<commands::WalletState>().offline_directory.set(directory)
                 .map_err(|_| std::io::Error::other("offline payment directory already initialized"))?;
+            tauri::WebviewWindowBuilder::from_config(app, &app.config().app.windows[0])?
+                .on_navigation(|url| burst_http_client::allowed_app_navigation(url, cfg!(debug_assertions), 1430))
+                .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
+                .build()?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -98,6 +102,8 @@ pub fn run() {
             constitution::propose_parameter,
             constitution::endorse_governance_proposal,
             constitution::withdraw_governance_proposal,
+            constitution::veto_governance_proposal,
+            constitution::get_bootstrap_status,
             commands::change_representative,
             commands::delegate_vote,
             commands::revoke_delegation,

@@ -3,8 +3,8 @@ import { createServer } from 'node:http';
 import { base, rpcUrl, rpc } from './native-env.mjs';
 import { enrollSigningDevice } from './native-certified-utils.mjs';
 
-async function script(code,args=[],async=false) {
-  const response=await fetch(`${base}/execute/${async?'async':'sync'}`,{
+async function script(code,args=[],executeAsync=false) {
+  const response=await fetch(`${base}/execute/${executeAsync?'async':'sync'}`,{
     method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({script:code,args}),
     signal:AbortSignal.timeout(45000),
   });

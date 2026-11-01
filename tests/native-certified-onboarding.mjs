@@ -1,5 +1,4 @@
-// Native signing against a normal private Test daemon. No synthetic IPC,
-// injected verification, time override or preselected committee.
+// Native signing and committee selection against a private Test daemon.
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { readFile, readdir, writeFile } from 'node:fs/promises';

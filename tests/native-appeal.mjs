@@ -13,8 +13,8 @@ assert.match(target || '', /^brst_[a-z0-9]{60}$/);
 assert(['Fraud', 'Inactivity'].includes(reason));
 assert(process.env.NATIVE_RESULT_PATH);
 
-async function script(code, args = [], async = false) {
-  const response = await fetch(`${base}/execute/${async ? 'async' : 'sync'}`, {
+async function script(code, args = [], executeAsync = false) {
+  const response = await fetch(`${base}/execute/${executeAsync ? 'async' : 'sync'}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ script: code, args }), signal: AbortSignal.timeout(45000),
   });

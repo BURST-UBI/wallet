@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
-// Supplemental definitions only. Errors, restrictions and recovery instructions stay visible.
+// Use for supplemental definitions. Put errors and recovery instructions in visible text.
 export function HelpLabel({ label, explanation }: { label: string; explanation: string }) {
   const [open, setOpen] = useState(false);
   return <Tooltip open={open} onOpenChange={setOpen} delayDuration={450}>

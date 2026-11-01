@@ -216,7 +216,7 @@ assert.equal((await rpc('verification_status', {account:subject})).status, 'veri
 const parameters = await rpc('protocol_params');
 challenge = await challengeWithReview(42, subject, parameters.challenge_stake_amount);
 await recordProgress({challenge});
-// Decision 17.3 preserves normal operations until the judgment, not a freeze.
+// An unresolved challenge must preserve the subject's ability to pay.
 await restoreWallet(subjectBackup, subject);
 assert.equal((await invoke('get_account_info', {rpcUrl})).verification_state, 'verified');
 const duringChallenge = await payWithReview(subject, receiver, '1', unit.toString());

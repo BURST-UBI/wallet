@@ -26,13 +26,13 @@ Text choice:
 - Risk/failure → `warning` / `destructive`, with explicit wording.
 - Confirmed success → `success`, with explicit wording.
 
-Decorative separators use `border`. Inputs use `input`, tested at 3:1 against the canvas. Text pairs need 4.5:1 in each theme. Keep default border styling in the base cascade layer so semantic utility colors can override it.
+Decorative separators use `border`. Inputs use `input`; require at least 3:1 contrast against the canvas. Text pairs need 4.5:1 in each theme. Keep default border styling in the base cascade layer so semantic utility colors can override it.
 
 ## Layout
 
 Use 4px spacing increments, primarily 8/12/16/24/32. Desktop sidebar is 208px, 184px on narrower desktops; below 760px use the four-item labeled bottom navigation and More dialog. Main content scrolls independently, with safe-area padding and a 100dvh shell.
 
-Cards and balance panels share `--radius-card` (16px) and `--shadow-card`; both wallet balances have the same surface. Use 24px padding for content cards and 20px for node metrics. Do not add a solid border or hover lift to a static card. Group with space before adding another card. Expanded balance details must not stretch the adjacent panel. Use one alignment rail for headings, form labels, and content.
+Cards and balance panels share `--radius-card` (16px) and `--shadow-card`; both wallet balances have the same surface. Use 24px padding for content cards. Do not add a solid border or hover lift to a static card. Group with space before adding another card. Expanded balance details must not stretch the adjacent panel. Use one alignment rail for headings, form labels, and content.
 
 ## Motion
 

@@ -10,7 +10,7 @@ before(async () => {
 });
 after(async () => { await browser?.close(); });
 
-async function wallet(network, options = {}) {
+async function openWalletFixture(network, options = {}) {
   const page = await browser.newPage({ viewport: { width: 1000, height: 750 }, ...options });
   page.on('pageerror', error => console.error('Wallet UI error:', error.message));
   await page.addInitScript((network) => {
@@ -62,7 +62,7 @@ async function wallet(network, options = {}) {
   }, network);
   await page.goto('http://127.0.0.1:1430/');
   await page.getByText('Create New Wallet', { exact:true }).waitFor();
-  // Fixture injection only; no production keys or backend transaction behavior is mocked as E2E.
+  // Inject frontend fixture state; these assertions do not exercise native signing.
   await page.evaluate(async () => {
     // Use the exact module URL loaded by Vite (including its HMR timestamp),
     // otherwise an edited dev server can instantiate a second Zustand store.
@@ -80,7 +80,7 @@ async function wallet(network, options = {}) {
 }
 
 for (const kind of ['transfer','merge','reject']) test(`offline TRST ${kind} keeps its reviewed input and never invokes online submission`,async()=>{
-  const page=await wallet('test',{viewport:{width:390,height:844}});
+  const page=await openWalletFixture('test',{viewport:{width:390,height:844}});
   try {
     await page.evaluate(async kind=>{
       const {useWalletStore}=await import(window.fixtureStoreUrl);
@@ -139,7 +139,7 @@ for (const kind of ['transfer','merge','reject']) test(`offline TRST ${kind} kee
 });
 
 test('revocation notice announces amounts, exposes origins and clears after restoration', async () => {
-  const page = await wallet('test', {viewport:{width:390,height:844},hasTouch:true});
+  const page = await openWalletFixture('test', {viewport:{width:390,height:844},hasTouch:true});
   try {
     await page.clock.install();
     await page.evaluate(() => {
@@ -176,7 +176,7 @@ test('revocation notice announces amounts, exposes origins and clears after rest
 });
 
 test('revocation notice ignores stale wallet and node responses', async () => {
-  const page=await wallet('test');
+  const page=await openWalletFixture('test');
   try {
     await page.clock.install();
     await page.evaluate(()=>{
@@ -204,7 +204,7 @@ test('revocation notice ignores stale wallet and node responses', async () => {
 });
 
 test('accrual overflow stays unavailable even when burns reduce the net balance', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     await page.evaluate(() => {
       const max=((1n<<128n)-1n).toString();
@@ -222,7 +222,7 @@ test('accrual overflow stays unavailable even when burns reduce the net balance'
 
 test('manual combination reviews active and expired batches without mixing or signing on cancel', async () => {
   for (const status of ['active', 'expired']) {
-    const page = await wallet('test', {viewport:{width:390,height:844}});
+    const page = await openWalletFixture('test', {viewport:{width:390,height:844}});
     try {
       await page.evaluate(status => {
         window.mergePortfolio = {total_active:'14',total_expired:'14',total_revoked:'7',batches:
@@ -263,7 +263,7 @@ test('manual combination reviews active and expired batches without mixing or si
 });
 
 test('signing device review requires confirmation and preserves failure recovery', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     await page.getByRole('link',{name:'Settings',exact:true}).first().click();
     const trigger = page.getByRole('button',{name:'Signing device',exact:true});
@@ -294,7 +294,7 @@ test('signing device review requires confirmation and preserves failure recovery
 });
 
 test('view-only onboarding opens public data without signing controls or automation', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     await page.goto('http://127.0.0.1:1430/onboarding');
     await page.getByRole('button', {name:'View a wallet by address',exact:true}).click();
@@ -320,7 +320,7 @@ test('view-only onboarding opens public data without signing controls or automat
 });
 
 test('outgoing pending TRST is separate from available money and unknown is not zero', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     await page.evaluate(() => {
       const original = window.__TAURI_INTERNALS__.invoke;
@@ -364,7 +364,7 @@ test('outgoing pending TRST is separate from available money and unknown is not 
 });
 
 for (const control of ['sidebar', 'settings', 'mobile']) test(`wallet lock ${control} waits for native success and exposes failures`, async () => {
-  const page = await wallet('test', { viewport: { width: control === 'mobile' ? 390 : 1200, height: 1000 } });
+  const page = await openWalletFixture('test', { viewport: { width: control === 'mobile' ? 390 : 1200, height: 1000 } });
   try {
     await page.evaluate(() => {
       const original = window.__TAURI_INTERNALS__.invoke;
@@ -408,7 +408,7 @@ for (const control of ['sidebar', 'settings', 'mobile']) test(`wallet lock ${con
 });
 
 test('secondary screens load on demand without hiding navigation or losing focus', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   let release;
   const delayed = new Promise(resolve => { release = resolve; });
   try {
@@ -429,7 +429,7 @@ test('secondary screens load on demand without hiding navigation or losing focus
 });
 
 test('a failed screen chunk preserves the wallet shell and offers keyboard recovery', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     await page.route('**/src/pages/governance.tsx*', route => route.abort('failed'));
     await page.getByRole('link', { name: 'Governance', exact: true }).click();
@@ -445,7 +445,7 @@ test('a failed screen chunk preserves the wallet shell and offers keyboard recov
 });
 
 test('settings align fields, validate locally and retain receive and security controls', async () => {
-  const page = await wallet('test',{viewport:{width:1200,height:1100}});
+  const page = await openWalletFixture('test',{viewport:{width:1200,height:1100}});
   try {
     await page.getByRole('link',{name:'Settings',exact:true}).click();
     const node = page.getByLabel('Node URL',{exact:true});
@@ -494,7 +494,7 @@ test('settings align fields, validate locally and retain receive and security co
 });
 
 test('app identity appears once at desktop and mobile widths', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     for (const width of [1200,800,760,320]) {
       await page.setViewportSize({width,height:750});
@@ -506,7 +506,7 @@ test('app identity appears once at desktop and mobile widths', async () => {
 });
 
 test('balance and form cards share restrained surfaces in both themes and high contrast', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     for (const dark of [false, true]) {
       await page.evaluate(dark => document.documentElement.classList.toggle('dark', dark), dark);
@@ -531,15 +531,15 @@ test('balance and form cards share restrained surfaces in both themes and high c
 });
 
 test('uncertain payments retain a receipt across navigation and cannot be blindly resubmitted', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     await page.evaluate(() => {
       const original = window.__TAURI_INTERNALS__.invoke;
-      window.sent = 0;
+      window.paymentCalls = 0;
       window.__TAURI_INTERNALS__.invoke = async (command,args) => {
         if (command !== 'pay') return original(command,args);
         window.paymentSigner = args.expectedAccount;
-        window.sent++;
+        window.paymentCalls++;
         await new Promise(resolve => {window.releasePayment = resolve;});
         throw new Error('confirmation pending for '+ 'f'.repeat(64) + '; check history before retrying');
       };
@@ -552,7 +552,7 @@ test('uncertain payments retain a receipt across navigation and cannot be blindl
     await page.getByRole('button',{name:'Submitting…',exact:true}).waitFor();
     await page.keyboard.press('Escape');
     assert.equal(await page.getByRole('dialog').count(),1);
-    assert.equal(await page.evaluate(() => window.sent),1);
+    assert.equal(await page.evaluate(() => window.paymentCalls),1);
     assert.equal(await page.evaluate(() => window.paymentSigner),'brst_test_wallet');
     await page.evaluate(() => window.releasePayment());
     await page.getByRole('heading',{name:'Confirmation pending',exact:true}).waitFor();
@@ -561,14 +561,14 @@ test('uncertain payments retain a receipt across navigation and cannot be blindl
     await page.getByRole('link',{name:'Wallet',exact:true}).click();
     await page.getByRole('button',{name:'Pay',exact:true}).click();
     await page.getByRole('heading',{name:'Confirmation pending',exact:true}).waitFor();
-    assert.equal(await page.evaluate(() => window.sent),1);
+    assert.equal(await page.evaluate(() => window.paymentCalls),1);
     await page.getByRole('button',{name:'I checked activity',exact:true}).click();
     assert.equal(await page.getByRole('button',{name:'Pay',exact:true}).isEnabled(),true);
   } finally {await page.close();}
 });
 
 test('pending account preparation is not shown as a pending payment and can be retried deliberately', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   page.setDefaultTimeout(5000);
   try {
     await page.evaluate(() => {
@@ -603,7 +603,7 @@ test('pending account preparation is not shown as a pending payment and can be r
 });
 
 test('lost submission responses without a hash are also treated as uncertain', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     await page.evaluate(() => {const original=window.__TAURI_INTERNALS__.invoke;window.__TAURI_INTERNALS__.invoke=async (command,args) => {if(command === 'pay') throw new Error('request failed: connection closed');return original(command,args);};});
     await page.getByRole('button',{name:'Pay',exact:true}).click();
@@ -620,7 +620,7 @@ test('lost submission responses without a hash are also treated as uncertain', a
 });
 
 test('verification polling failures cannot dismiss an endorsement that is being submitted', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     await page.clock.install();
     await page.evaluate(() => {
@@ -650,7 +650,7 @@ test('verification polling failures cannot dismiss an endorsement that is being 
 });
 
 test('constitutional proposals cannot be voted on without their full amendment text', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     await page.evaluate(() => {
       const original=window.__TAURI_INTERNALS__.invoke;window.includeAmendment=false;
@@ -675,7 +675,7 @@ test('constitutional proposals cannot be voted on without their full amendment t
 });
 
 test('transfers respect origin groups rather than advertising the combined balance as spendable in one send', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     await page.evaluate(() => {
       const original = window.__TAURI_INTERNALS__.invoke;
@@ -702,7 +702,7 @@ test('transfers respect origin groups rather than advertising the combined balan
 });
 
 test('governance requires reading a proposal and rechecks its voting round before signing', async () => {
-  const page = await wallet('test',{viewport:{width:390,height:844}});
+  const page = await openWalletFixture('test',{viewport:{width:390,height:844}});
   try {
     await page.evaluate(() => {
       const original = window.__TAURI_INTERNALS__.invoke;
@@ -731,7 +731,7 @@ test('governance requires reading a proposal and rechecks its voting round befor
 });
 
 test('expiry returns are labelled as owned funds and can be claimed without a return action', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     await page.evaluate(async () => {
       const { useWalletStore } = await import(window.fixtureStoreUrl);
@@ -771,7 +771,7 @@ test('expiry returns are labelled as owned funds and can be claimed without a re
 });
 
 test('receive reviews expose full details and keep partial batch progress without resubmitting', async () => {
-  const page = await wallet('test',{viewport:{width:320,height:700}});
+  const page = await openWalletFixture('test',{viewport:{width:320,height:700}});
   try {
     await page.evaluate(() => {
       const original = window.__TAURI_INTERNALS__.invoke;
@@ -796,7 +796,7 @@ test('receive reviews expose full details and keep partial batch progress withou
 });
 
 test('pending pages remain bounded, show failures and return to the first page after receiving', async () => {
-  const page=await wallet('test',{viewport:{width:320,height:700}});
+  const page=await openWalletFixture('test',{viewport:{width:320,height:700}});
   try {
     await page.evaluate(async ()=>{
       const store=(await import(window.fixtureStoreUrl)).useWalletStore;
@@ -847,7 +847,7 @@ test('pending pages remain bounded, show failures and return to the first page a
 });
 
 test('returning a payment requires a separate confirmation and preserves uncertain receipts', async () => {
-  const page = await wallet('test',{viewport:{width:320,height:700}});
+  const page = await openWalletFixture('test',{viewport:{width:320,height:700}});
   try {
     await page.evaluate(async () => {
       const {useWalletStore} = await import(window.fixtureStoreUrl);
@@ -892,7 +892,7 @@ test('returning a payment requires a separate confirmation and preserves uncerta
 });
 
 test('return reviews recheck automatic acceptance and wallet identity without signing', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     await page.evaluate(() => {
       const original = window.__TAURI_INTERNALS__.invoke;
@@ -932,7 +932,7 @@ test('return reviews recheck automatic acceptance and wallet identity without si
 
 test('changing receive settings cancels active and late-starting automation sessions', async () => {
   for (const delayedBegin of [false,true]) {
-    const page = await wallet('test');
+    const page = await openWalletFixture('test');
     page.setDefaultTimeout(5000);
     try {
       await page.clock.install();
@@ -974,16 +974,16 @@ test('changing receive settings cancels active and late-starting automation sess
 });
 
 test('normal automation cancellation is quiet but genuine failures remain visible', async () => {
-  const page=await wallet('test');page.setDefaultTimeout(5000);
+  const page=await openWalletFixture('test');page.setDefaultTimeout(5000);
   try {
     await page.clock.install();
     await page.evaluate(async ()=>{
       const original=window.__TAURI_INTERNALS__.invoke;
-      window.cancelPass=0;
+      window.maintenanceCalls=0;
       window.__TAURI_INTERNALS__.invoke=async(command,args)=>{
         if(command==='maintain_wallet') {
-          window.cancelPass++;
-          if(window.cancelPass===1) throw 'Automation settings changed; remaining payments were not submitted';
+          window.maintenanceCalls++;
+          if(window.maintenanceCalls===1) throw 'Automation settings changed; remaining payments were not submitted';
           throw 'Node connection unavailable';
         }
         return original(command,args);
@@ -991,7 +991,7 @@ test('normal automation cancellation is quiet but genuine failures remain visibl
       (await import(window.fixtureStoreUrl)).useWalletStore.getState().setAutomation({mergeLevel:0});
     });
     await page.clock.fastForward(2000);
-    await page.waitForFunction(()=>window.cancelPass===1);
+    await page.waitForFunction(()=>window.maintenanceCalls===1);
     assert.equal(await page.locator('.automation-notice').count(),0);
     await page.clock.fastForward(15000);
     await page.getByTitle('Node connection unavailable',{exact:true}).waitFor();
@@ -999,18 +999,18 @@ test('normal automation cancellation is quiet but genuine failures remain visibl
 });
 
 test('automatic hold explanations survive later scan pages but clear on recheck or policy change', async () => {
-  const page=await wallet('test'); page.setDefaultTimeout(5000);
+  const page=await openWalletFixture('test'); page.setDefaultTimeout(5000);
   try {
     await page.clock.install();
     await page.evaluate(()=>{
       const original=window.__TAURI_INTERNALS__.invoke;
-      window.scanPass=0;
+      window.scanCalls=0;
       window.__TAURI_INTERNALS__.invoke=async (command,args)=>{
         if(command==='maintain_wallet') {
-          window.scanPass++;
+          window.scanCalls++;
           return {received:0,merged:0,held:1,
-            checked_hashes:window.scanPass===2?['b']:['a'],
-            held_reasons:window.scanPass===1?[{hash:'a',reason:'First creator is not a member'}]:window.scanPass===2?[{hash:'b',reason:'Second creator is not a member'}]:[]};
+            checked_hashes:window.scanCalls===2?['b']:['a'],
+            held_reasons:window.scanCalls===1?[{hash:'a',reason:'First creator is not a member'}]:window.scanCalls===2?[{hash:'b',reason:'Second creator is not a member'}]:[]};
         }
         return original(command,args);
       };
@@ -1019,14 +1019,14 @@ test('automatic hold explanations survive later scan pages but clear on recheck 
       (await import(window.fixtureStoreUrl)).useWalletStore.getState().setAutomation({mergeLevel:0});
     });
     await page.clock.fastForward(2000);
-    await page.waitForFunction(()=>window.scanPass===1);
+    await page.waitForFunction(()=>window.scanCalls===1);
     const holds=()=>page.evaluate(async ()=>(await import(window.fixtureStoreUrl)).useWalletStore.getState().groupHolds);
     assert.deepEqual(await holds(),{a:'First creator is not a member'});
     await page.clock.fastForward(15000);
-    await page.waitForFunction(()=>window.scanPass===2);
+    await page.waitForFunction(()=>window.scanCalls===2);
     assert.deepEqual(await holds(),{a:'First creator is not a member',b:'Second creator is not a member'});
     await page.clock.fastForward(15000);
-    await page.waitForFunction(()=>window.scanPass===3);
+    await page.waitForFunction(()=>window.scanCalls===3);
     assert.deepEqual(await holds(),{b:'Second creator is not a member'});
     await page.evaluate(async ()=>{
       const store=(await import(window.fixtureStoreUrl)).useWalletStore;
@@ -1037,7 +1037,7 @@ test('automatic hold explanations survive later scan pages but clear on recheck 
 });
 
 test('group settings load without trusting, require an explicit save and pin selected endpoints', async () => {
-  const page=await wallet('test'); page.setDefaultTimeout(5000);
+  const page=await openWalletFixture('test'); page.setDefaultTimeout(5000);
   try {
     await page.evaluate(()=>{
       const original=window.__TAURI_INTERNALS__.invoke;
@@ -1105,7 +1105,7 @@ test('group settings load without trusting, require an explicit save and pin sel
 });
 
 test('group graph settings preserve legacy rules and reject malformed saved depth or roles', async () => {
-  const page=await wallet('test');
+  const page=await openWalletFixture('test');
   try {
     const results=await page.evaluate(async()=>{
       const {readGroupPolicy}=await import('/src/lib/group-policy.ts');
@@ -1125,7 +1125,7 @@ test('group graph settings preserve legacy rules and reject malformed saved dept
 });
 
 test('unreadable saved group policy blocks automation instead of falling back to protocol-only', async () => {
-  const page=await wallet('test'); page.setDefaultTimeout(5000);
+  const page=await openWalletFixture('test'); page.setDefaultTimeout(5000);
   try {
     await page.evaluate(()=>localStorage.setItem('burst-wallet',JSON.stringify({state:{autoAccept:true,mergeLevel:50,groupPolicy:{mode:'any',groups:[]}},version:0})));
     await page.reload();
@@ -1145,7 +1145,7 @@ test('unreadable saved group policy blocks automation instead of falling back to
 });
 
 test('slow polling does not starve successful responses or start overlapping requests', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     await page.clock.install();
     await page.evaluate(() => {
@@ -1168,7 +1168,7 @@ test('slow polling does not starve successful responses or start overlapping req
 });
 
 test('reduced motion keeps TRST disclosures immediate without rotating animation', {timeout:45_000}, async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   page.setDefaultTimeout(10_000);
   try {
     await page.emulateMedia({reducedMotion:'reduce'});
@@ -1183,7 +1183,7 @@ test('reduced motion keeps TRST disclosures immediate without rotating animation
 });
 
 test('computes BRN locally, handles lowercase verification and keeps scaled TRST states separate', async () => {
-  const page = await wallet();
+  const page = await openWalletFixture();
   try {
     assert.equal(await page.getByText('Wallet not verified', { exact: true }).count(), 0);
     assert.equal(await page.getByRole('link', { name: 'Wallet', exact: true }).getAttribute('aria-current'), 'page');
@@ -1198,7 +1198,7 @@ test('computes BRN locally, handles lowercase verification and keeps scaled TRST
 });
 
 test('endpoint changes refetch, show offline state and recover on retry', async () => {
-  const page = await wallet();
+  const page = await openWalletFixture();
   try {
     await page.evaluate(async () => {
       window.offline = true;
@@ -1217,7 +1217,7 @@ test('endpoint changes refetch, show offline state and recover on retry', async 
 });
 
 test('reload never restores an unlocked UI from persisted flags', async () => {
-  const page = await wallet();
+  const page = await openWalletFixture();
   try {
     await page.evaluate(() => localStorage.setItem('burst-wallet', JSON.stringify({
       state: { address: 'brst_test_wallet', isLocked: false, rpcUrl: 'http://127.0.0.1:9999' }, version: 0,
@@ -1241,14 +1241,14 @@ test('network banner distinguishes test funds, mainnet and unknown legacy nodes'
     ['live', 'Mainnet · Real transactions. Test tools are unavailable.'],
     [undefined, 'Network unknown. Do not assume this is mainnet.'],
   ]) {
-    const page = await wallet(network);
+    const page = await openWalletFixture(network);
     try { assert.equal(await page.locator('.network-notice').textContent(), message); }
     finally { await page.close(); }
   }
 });
 
 test('appearance changes preserve wallet state and remain readable at desktop minimum size', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     assert.equal(await page.locator('body').evaluate(el => el.classList.contains('dark')), false);
     await page.screenshot({path:'/tmp/burst-wallet-home.png',animations:'disabled'});
@@ -1290,7 +1290,7 @@ test('welcome keeps every recovery route and supports keyboard selection', async
 });
 
 test('narrow wallet keeps navigation, balances and actions reachable without overflow', {timeout:45_000}, async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   page.setDefaultTimeout(10_000);
   try {
     for (const width of [320, 500, 800]) {
@@ -1310,7 +1310,7 @@ test('narrow wallet keeps navigation, balances and actions reachable without ove
 });
 
 test('receive clipboard denial and RPC failure have actionable states', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     await page.getByRole('button', { name: 'Receive', exact: true }).click();
     await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async () => { throw new Error('Permission denied'); } } }));
@@ -1324,7 +1324,7 @@ test('receive clipboard denial and RPC failure have actionable states', async ()
 });
 
 test('brand and token icons are inline and help is available on hover, keyboard and click', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   page.setDefaultTimeout(5000);
   try {
     assert.equal(await page.locator('.brand-lockup svg').count(), 1);
@@ -1352,7 +1352,7 @@ test('brand and token icons are inline and help is available on hover, keyboard 
 });
 
 test('help definitions can be tapped and dismissed on touch screens', async () => {
-  const page = await wallet('test', { hasTouch: true, viewport: { width: 390, height: 844 } });
+  const page = await openWalletFixture('test', { hasTouch: true, viewport: { width: 390, height: 844 } });
   page.setDefaultTimeout(5000);
   try {
     await page.getByRole('button', { name: 'BRN', exact: true }).tap();
@@ -1364,7 +1364,7 @@ test('help definitions can be tapped and dismissed on touch screens', async () =
 });
 
 test('named type roles retain size and color; captions and controls stay readable', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     const styles = await page.evaluate(() => {
       const caption = document.querySelector('.text-caption');
@@ -1385,7 +1385,7 @@ test('named type roles retain size and color; captions and controls stay readabl
 });
 
 test('Enter reviews payments without sending; confirmation restores focus and fits short windows', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     for (const [route, field, amountLabel, action] of [
       ['Pay', 'Provider address', 'Amount (BRN)', 'Pay'],
@@ -1417,7 +1417,7 @@ test('Enter reviews payments without sending; confirmation restores focus and fi
 });
 
 test('touch controls keep 44px targets and payment inputs compute to 16px', async () => {
-  const page = await wallet('test', { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  const page = await openWalletFixture('test', { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   try {
     const help = await page.getByRole('button', { name: 'BRN', exact: true }).boundingBox();
     assert.ok(help.width >= 44 && help.height >= 44);
@@ -1429,7 +1429,7 @@ test('touch controls keep 44px targets and payment inputs compute to 16px', asyn
 });
 
 test('pending failures never look like no pending payments', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     await page.evaluate(async () => {
       const original = window.__TAURI_INTERNALS__.invoke;
@@ -1504,15 +1504,15 @@ test('repeated Enter cannot issue concurrent keystore unlock requests', async ()
 
 
 test('activity labels native block balances truthfully and retries a failed older page', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     await page.evaluate(() => {
       const original = window.__TAURI_INTERNALS__.invoke;
-      window.historyFail = true;
+      window.historyUnavailable = true;
       window.__TAURI_INTERNALS__.invoke = async (command, args) => {
         if (command !== 'get_account_history') return original(command, args);
         const later = args.cursor && atob(args.cursor) !== '0';
-        if (later && window.historyFail) throw new Error('Older page unavailable');
+        if (later && window.historyUnavailable) throw new Error('Older page unavailable');
         return { account:'brst_test_wallet', history:[{hash: later ? 'older-block' : 'native-send-block', block_type:'Send', account:'brst_test_wallet', amount:'2345000000000000000',timestamp:1700000000}], cursor:later ? undefined : btoa('25') };
       };
     });
@@ -1525,7 +1525,7 @@ test('activity labels native block balances truthfully and retries a failed olde
     await page.getByRole('button', {name:'Next',exact:true}).click();
     await page.getByRole('alert').getByText('Older page unavailable').waitFor();
     assert.equal(await page.getByText('native-send-block', {exact:true}).count(),1);
-    await page.evaluate(() => { window.historyFail = false; });
+    await page.evaluate(() => { window.historyUnavailable = false; });
     await page.getByRole('button', {name:'Try again',exact:true}).click();
     await page.getByRole('status').getByText('Entries 26–26',{exact:true}).waitFor();
     assert.equal(await page.locator('main details').count(),1);
@@ -1537,7 +1537,7 @@ test('activity labels native block balances truthfully and retries a failed olde
 });
 
 test('activity keeps one bounded page while navigating forward and backward', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     await page.evaluate(() => {
       const original = window.__TAURI_INTERNALS__.invoke;
@@ -1562,7 +1562,7 @@ test('activity keeps one bounded page while navigating forward and backward', as
 });
 
 test('activity distinguishes account maintenance and verification from incoming payments', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   page.setDefaultTimeout(5000);
   try {
     await page.evaluate(() => {
@@ -1600,7 +1600,7 @@ test('activity distinguishes account maintenance and verification from incoming 
 });
 
 test('portfolio linear reference is separate from balance and accessible on touch', async () => {
-  const page = await wallet('test', {viewport:{width:390,height:844},hasTouch:true});
+  const page = await openWalletFixture('test', {viewport:{width:390,height:844},hasTouch:true});
   page.setDefaultTimeout(5000);
   try {
     await page.evaluate(() => {
@@ -1652,7 +1652,7 @@ test('portfolio linear reference is separate from balance and accessible on touc
 });
 
 test('large portfolios remain paged without losing totals or entries', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   page.setDefaultTimeout(5000);
   try {
     await page.evaluate(() => {
@@ -1686,7 +1686,7 @@ test('large portfolios remain paged without losing totals or entries', async () 
 });
 
 test('representative setting submits with Enter once while pending', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   page.setDefaultTimeout(5000);
   try {
     await page.evaluate(() => {
@@ -1711,7 +1711,7 @@ test('representative setting submits with Enter once while pending', async () =>
 });
 
 test('portfolio distinguishes original burns, merges and unknown legacy origins', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   page.setDefaultTimeout(5000);
   const errors = [];
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
@@ -1756,7 +1756,7 @@ test('portfolio distinguishes original burns, merges and unknown legacy origins'
 });
 
 test('merged origin inspection is lazy, bounded, retryable and reset when the node changes', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   page.setDefaultTimeout(5000);
   try {
     await page.evaluate(() => {
@@ -1822,7 +1822,7 @@ test('merged origin inspection is lazy, bounded, retryable and reset when the no
 });
 
 test('incoming payment review inspects original creators without receiving or returning', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   page.setDefaultTimeout(5000);
   try {
     await page.evaluate(async () => {
@@ -1860,7 +1860,7 @@ test('incoming payment review inspects original creators without receiving or re
 });
 
 test('portfolio and activity outages never appear as empty balances or empty activity', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     await page.evaluate(() => {
       const original = window.__TAURI_INTERNALS__.invoke;
@@ -1879,7 +1879,7 @@ test('portfolio and activity outages never appear as empty balances or empty act
 });
 
 test('mobile More navigation moves focus to the destination, while Escape restores More', async () => {
-  const page = await wallet('test', {viewport:{width:390,height:844}});
+  const page = await openWalletFixture('test', {viewport:{width:390,height:844}});
   try {
     await page.getByRole('button', {name:'More',exact:true}).click();
     await page.getByRole('dialog').getByRole('link', {name:'Settings',exact:true}).click();
@@ -1891,7 +1891,7 @@ test('mobile More navigation moves focus to the destination, while Escape restor
 });
 
 test('cancelling key export clears the password and discards late synthetic results', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     await page.evaluate(() => {
       const original = window.__TAURI_INTERNALS__.invoke;
@@ -1916,7 +1916,7 @@ test('cancelling key export clears the password and discards late synthetic resu
 
 
 test('all wallet routes fit narrow touch screens in both appearances', async () => {
-  const page = await wallet('test',{viewport:{width:320,height:700},hasTouch:true,isMobile:true});
+  const page = await openWalletFixture('test',{viewport:{width:320,height:700},hasTouch:true,isMobile:true});
   const errors = [];
   page.on('pageerror',error => errors.push(error.message));
   try {
@@ -1947,7 +1947,7 @@ test('all wallet routes fit narrow touch screens in both appearances', async () 
 });
 
 test('theme text tokens meet normal-text contrast and input boundaries remain visible', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     await page.getByRole('button',{name:'Pay',exact:true}).click();
     await page.getByLabel('Provider address',{exact:true}).waitFor();
@@ -1972,7 +1972,7 @@ test('theme text tokens meet normal-text contrast and input boundaries remain vi
 });
 
 test('consumer home distinguishes paused and zero-rate income, reputation and revoked TRST', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     await page.getByText('Income is paused for this wallet',{exact:true}).waitFor();
     await page.getByRole('region',{name:'Non-transferable TRST'}).getByText(/kept as reputation/).waitFor();
@@ -1997,7 +1997,7 @@ test('consumer home distinguishes paused and zero-rate income, reputation and re
 });
 
 test('verification capability distinguishes paused, unknown and available reviews', async () => {
-  const page = await wallet('test');
+  const page = await openWalletFixture('test');
   try {
     await page.clock.install();
     await page.evaluate(() => {
@@ -2060,7 +2060,7 @@ test('verification capability distinguishes paused, unknown and available review
 });
 
 test('verification shows the next step and keeps community tools contextual', async () => {
-  const page = await wallet('test',{viewport:{width:320,height:700},hasTouch:true,isMobile:true});
+  const page = await openWalletFixture('test',{viewport:{width:320,height:700},hasTouch:true,isMobile:true});
   try {
     await page.evaluate(() => {
       const original = window.__TAURI_INTERNALS__.invoke;

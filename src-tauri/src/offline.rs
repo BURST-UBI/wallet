@@ -3,7 +3,7 @@ use crate::commands::{
 };
 use burst_types::{Timestamp, TxHash, WalletAddress};
 use burst_wallet_core::{
-    offline::{load_payment, load_payment_with_ancestry, payment_was_submitted, OfflineAction, OfflineActionContext, OfflinePaymentContext, OfflineReceiveContext, OfflinePaymentReview},
+    offline::{load_payment, load_payment_with_ancestry, payment_may_have_been_submitted, OfflineAction, OfflineActionContext, OfflinePaymentContext, OfflineReceiveContext, OfflinePaymentReview},
     signed_client::parse_address,
     transaction_builder::build_burn_tx,
     NodeClient,
@@ -176,7 +176,7 @@ pub async fn sign_offline_payment(
     Ok(block.hash.to_string())
 }
 
-/// Return the saved hash without exposing a signing key or converting raw amounts.
+/// Public summary of a saved action and the recovery choices available for it.
 #[derive(serde::Serialize)]
 pub struct OfflinePaymentStatus {
     hash: String,
@@ -221,7 +221,7 @@ pub async fn get_offline_payment(
                 | burst_ledger::BlockType::Receive
                 | burst_ledger::BlockType::Open
         ),
-        can_discard: !payment_was_submitted(&path, &block.hash)
+        can_discard: !payment_may_have_been_submitted(&path, &block.hash)
             .map_err(|error| error.to_string())?,
     }))
 }
@@ -248,7 +248,7 @@ pub async fn discard_offline_payment(
     if block.hash.to_string() != expected_hash {
         return Err("Saved payment changed. Review it again.".into());
     }
-    if payment_was_submitted(&path, &block.hash).map_err(|error| error.to_string())? {
+    if payment_may_have_been_submitted(&path, &block.hash).map_err(|error| error.to_string())? {
         return Err(
             "This payment may already be submitted. Check confirmation instead of discarding it."
                 .into(),
@@ -420,7 +420,7 @@ mod tests {
             head: BlockHash::new([2; 32]),
             block_count: 1,
             representative: account.clone(),
-            brn_balance: 0,
+            brn_spent: 0,
             trst_balance: 0,
         };
         let build = |amount| {

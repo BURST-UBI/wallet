@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 type Pending = { hash: string; can_discard: boolean; kind: string; can_review_payment: boolean };
 const actionNames: Record<string, string> = {
   GovernanceProposal: "Proposal", GovernanceVote: "Governance vote", GovernanceEndorse: "Proposal endorsement",
-  GovernanceWithdraw: "Proposal withdrawal", VerificationVote: "Verification vote", Endorse: "Endorsement",
+  GovernanceWithdraw: "Proposal withdrawal", GovernanceVeto: "Bootstrap governance veto", VerificationVote: "Verification vote", Endorse: "Endorsement",
   Challenge: "Challenge or appeal", Delegate: "Delegation", RevokeDelegation: "Delegation revocation",
   VerifierOptIn: "Verifier participation", VerifierOptOut: "Verifier participation",
   ChangeRepresentative: "Account update", Send: "TRST transfer", Merge: "TRST merge", RejectReceive: "Payment return",
@@ -46,7 +46,7 @@ function OfflinePaymentFlow({ address, rpcUrl, incoming, recoverReceive }: { add
   const active = useRef(false);
   const inFlight = useRef(false);
   const heading = useRef<HTMLHeadingElement>(null);
-  const current = () => {
+  const isCurrentWallet = () => {
     const wallet = useWalletStore.getState();
     return active.current && !wallet.isLocked && wallet.address === address && wallet.rpcUrl === rpcUrl;
   };
@@ -55,24 +55,24 @@ function OfflinePaymentFlow({ address, rpcUrl, incoming, recoverReceive }: { add
       invoke<Pending | null>("get_offline_payment", { expectedAccount: address }),
       invoke<boolean>("offline_signing_available"),
     ]);
-    if (current()) { setPending(draft); setCanSign(available); setLoaded(true); }
+    if (isCurrentWallet()) { setPending(draft); setCanSign(available); setLoaded(true); }
   }
   useEffect(() => {
     active.current = true;
-    refresh().catch(reason => { if (current()) setError(String(reason)); });
+    refresh().catch(reason => { if (isCurrentWallet()) setError(String(reason)); });
     return () => { active.current = false; };
   }, []);
   async function run(label: string, action: () => Promise<void>) {
-    if (inFlight.current || !current()) return;
+    if (inFlight.current || !isCurrentWallet()) return;
     inFlight.current = true;
     setBusy(label); setError(""); setMessage("");
     try { await action(); }
     catch (reason) {
-      if (current()) {
+      if (isCurrentWallet()) {
         setError(String(reason));
-        try { await refresh(); } catch { if (current()) setLoaded(false); }
+        try { await refresh(); } catch { if (isCurrentWallet()) setLoaded(false); }
       }
-    } finally { inFlight.current = false; if (current()) setBusy(""); }
+    } finally { inFlight.current = false; if (isCurrentWallet()) setBusy(""); }
   }
   const disabled = !!busy || !loaded || !canSign;
   const actionRecovery = recoverReceive || resolvedAction || (pending !== null && pending.can_review_payment !== true);
@@ -100,21 +100,21 @@ function OfflinePaymentFlow({ address, rpcUrl, incoming, recoverReceive }: { add
         } else {
           await invoke<string>("sign_offline_payment", { expectedAccount: address, context: selected.context, provider: selected.provider, amount: selected.amount });
         }
-        if (current()) { setContext(null); setReceipt(null); setMessage("Signed and saved on this device. Nothing has been submitted."); }
+        if (isCurrentWallet()) { setContext(null); setReceipt(null); setMessage("Signed and saved on this device. Nothing has been submitted."); }
       } else if (selected.kind === "action") {
         await invoke("submit_offline_action", {rpcUrl,expectedAccount:address,expectedHash:selected.hash});
-        if (current()) { setMessage("Transaction confirmed."); setResolvedAction(true); }
+        if (isCurrentWallet()) { setMessage("Transaction confirmed."); setResolvedAction(true); }
       } else if (selected.kind === "send") {
         await invoke("submit_offline_payment", { rpcUrl, expectedAccount: address, expectedHash: selected.hash });
-        if (current()) setMessage("Payment confirmed.");
+        if (isCurrentWallet()) setMessage("Payment confirmed.");
       } else {
         await invoke("discard_offline_payment", { expectedAccount: address, expectedHash: selected.hash });
-        if (current()) {
+        if (isCurrentWallet()) {
           setMessage(actionRecovery ? "Unsent transaction discarded. Its record is retained locally." : "Unsent payment discarded. Its record is retained locally.");
           if (actionRecovery) setResolvedAction(true);
         }
       }
-      if (current()) setReview(null);
+      if (isCurrentWallet()) setReview(null);
       await refresh();
     });
   }
@@ -132,18 +132,18 @@ function OfflinePaymentFlow({ address, rpcUrl, incoming, recoverReceive }: { add
             <div className="flex flex-wrap gap-2">
               {pending.can_review_payment === true && !recoverReceive && <Button disabled={disabled} onClick={() => run("Loading review…", async () => {
                 const { kind: operation, ...result } = await invoke<PaymentReview>("review_offline_payment", { rpcUrl, expectedAccount: address, expectedHash: pending.hash });
-                if (current()) setReview({ kind: "send", operation, ...result });
+                if (isCurrentWallet()) setReview({ kind: "send", operation, ...result });
               })}>Review and submit</Button>}
               {!pending.can_review_payment && <Button disabled={disabled} onClick={() => run("Loading review…", async () => {
                 const details = await invoke<ActionReview>("review_saved_offline_action", {rpcUrl,expectedAccount:address,expectedHash:pending.hash});
-                if (current()) setReview({kind:"action",hash:pending.hash,details});
+                if (isCurrentWallet()) setReview({kind:"action",hash:pending.hash,details});
               })}>Review saved action</Button>}
               <Button variant={actionRecovery ? "default" : "outline"} disabled={disabled} onClick={() => run("Checking confirmation…", async () => {
                 const result = await invoke<{ status: string }>("resolve_offline_payment", { rpcUrl, expectedAccount: address, expectedHash: pending.hash });
-                if (current()) setMessage(actionRecovery
+                if (isCurrentWallet()) setMessage(actionRecovery
                   ? result.status === "confirmed" ? "Transaction confirmed." : result.status === "excluded" ? "This transaction was not applied. Return to its original screen to review a new action." : "A different transaction was confirmed in its place. Review your current state before starting again."
                   : result.status === "confirmed" ? "Payment confirmed." : result.status === "excluded" ? "The network advanced before this payment was applied. You can prepare a new payment." : "A different transaction was confirmed. This saved payment was not applied.");
-                if (current() && actionRecovery) setResolvedAction(true);
+                if (isCurrentWallet() && actionRecovery) setResolvedAction(true);
                 await refresh();
               })}>Check confirmation</Button>
               {pending.can_discard && <Button variant="ghost" disabled={disabled} onClick={() => setReview({ kind: "discard", hash: pending.hash })}>{actionRecovery ? "Discard unsent transaction" : "Discard unsent payment"}</Button>}
@@ -153,10 +153,10 @@ function OfflinePaymentFlow({ address, rpcUrl, incoming, recoverReceive }: { add
             <Button disabled={disabled} onClick={() => run("Preparing…", async () => {
               if (incoming) {
                 const result = await invoke<{context: string; review: PaymentReview}>("prepare_offline_receive", { rpcUrl, expectedAccount: address, payment: incoming });
-                if (current()) { setContext(result.context); setReceipt(result.review); }
+                if (isCurrentWallet()) { setContext(result.context); setReceipt(result.review); }
               } else {
                 const result = await invoke<string>("prepare_offline_payment", { rpcUrl, expectedAccount: address });
-                if (current()) setContext(result);
+                if (isCurrentWallet()) setContext(result);
               }
             })}>{incoming ? "Prepare offline receipt" : "Prepare offline payment"}</Button>
           </> : <form className="space-y-4" onSubmit={reviewSignature}>

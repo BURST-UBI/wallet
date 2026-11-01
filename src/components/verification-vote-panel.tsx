@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useRpc } from "@/hooks/use-wallet";
+import { useRpc } from "@/hooks/use-rpc";
 import { useTransaction } from "@/hooks/use-transaction";
 import { TransactionReceipt } from "@/components/transaction-receipt";
 import { Button } from "@/components/ui/button";

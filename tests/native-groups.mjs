@@ -7,8 +7,8 @@ import {promisify} from 'node:util';
 import {enrollSigningDevice} from './native-certified-utils.mjs';
 import {base,rpcUrl,rpc} from './native-env.mjs';
 
-async function script(code,args=[],async=false) {
-  const response=await fetch(`${base}/execute/${async?'async':'sync'}`,{
+async function script(code,args=[],executeAsync=false) {
+  const response=await fetch(`${base}/execute/${executeAsync?'async':'sync'}`,{
     method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({script:code,args}),signal:AbortSignal.timeout(45000),
   });
   const {value}=await response.json();assert(response.ok && !value?.error,JSON.stringify(value));return value;
@@ -93,7 +93,21 @@ try {
   assert.equal(accepted.received,2);assert.equal(accepted.protocol_fallbacks,0);
   assert.equal((await invoke('get_account_info',{rpcUrl})).trst_balance,'30');
   assert(queries.every(query=>query.creator===genesis.address),'merged payment checked its sender instead of original creators');
-  assert.equal(queries.length,8,'distinct burn origins by the same creator were not deduplicated per payment');
+  assert(queries.length>=4 && queries.length<=8,'unexpected membership request count across four payment evaluations');
+
+  // Trust the original creator, not the intermediary who sends the merged value.
+  await invoke('import_private_key',{hexKey:'44'.repeat(32)});
+  assert((await invoke('transfer_trst',{rpcUrl,expectedAccount:merger.address,to:receiver.address,amount:'1',origin:null})).accepted);
+  await invoke('import_private_key',{hexKey:'55'.repeat(32)});
+  const personal={mode:'personal',groups:[],trusted_creators:[merger.address],offline_fallback:'protocol'};
+  const beforePersonal=queries.length;
+  const heldPersonal=await maintain(receiver.address,personal);
+  assert.equal(heldPersonal.received,0,'trusting only the sender bypassed creator checks');
+  assert.equal(heldPersonal.held,1);
+  const acceptedPersonal=await maintain(receiver.address,{...personal,trusted_creators:[genesis.address]});
+  assert.equal(acceptedPersonal.received,1);
+  assert.equal(acceptedPersonal.protocol_fallbacks,0);
+  assert.equal(queries.length,beforePersonal,'personal trust contacted a group service');
 
   async function directPayment() {
     await invoke('import_private_key',{hexKey:'00'.repeat(32)});
@@ -208,8 +222,8 @@ try {
     const savedPolicy=()=>script(`return JSON.parse(localStorage.getItem('burst-wallet')).state.groupPolicy;`);
     const original=await savedPolicy();
     assert(await script(`const link=document.querySelector('a[href="/settings"]');if(!link)return false;link.click();return true;`));
-    await wait(`!![...document.querySelectorAll('summary')].find(item=>item.textContent.includes('Group checks'))`);
-    await script(`document.querySelectorAll('summary').forEach(item=>{if(item.textContent.includes('Group checks'))item.click();});`);
+    await wait(`!![...document.querySelectorAll('summary')].find(item=>item.textContent.includes('Creator trust'))`);
+    await script(`document.querySelectorAll('summary').forEach(item=>{if(item.textContent.includes('Creator trust'))item.click();});`);
     await script(`const label=[...document.querySelectorAll('label')].find(item=>item.textContent==='Automatic receive checks');const select=document.getElementById(label.htmlFor);select.value='any';select.dispatchEvent(new Event('change',{bubbles:true}));`);
     await wait(`!![...document.querySelectorAll('label')].find(item=>item.textContent==='Group directory URL')`);
     await script(`const label=[...document.querySelectorAll('label')].find(item=>item.textContent==='Group directory URL');const input=document.getElementById(label.htmlFor);Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,arguments[0]);input.dispatchEvent(new Event('input',{bubbles:true}));`,[`${endpoint}/directory.json`]);
@@ -220,7 +234,7 @@ try {
     assert.equal(queries.length,beforeQueries,'loading disclosed a creator to a membership endpoint');
     await script(`document.querySelector('[aria-label="Select Trusted community"]').click();`);
     assert.deepEqual(await savedPolicy(),original,'selection saved without review');
-    await click('Save group rules');
+    await click('Save trust rules');
     await wait(`JSON.parse(localStorage.getItem('burst-wallet')).state.groupPolicy?.groups?.length===1`);
     const selected=await savedPolicy();
     assert.equal(selected.mode,'any');

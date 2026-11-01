@@ -1,12 +1,12 @@
-// Real WebKit/Tauri IPC checks. Never log or persist recovery material.
+// WebKit/Tauri IPC checks. Keep phrases and private keys out of diagnostics.
 import assert from 'node:assert/strict';
 import { mkdtemp, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { base, rpcUrl } from './native-env.mjs';
 const backupPath = join(await mkdtemp(join(tmpdir(), 'burst-native-backup-')), 'disposable-wallet.json');
-async function execute(script, args = [], async = false) {
-  const response = await fetch(`${base}/execute/${async ? 'async' : 'sync'}`, {
+async function execute(script, args = [], executeAsync = false) {
+  const response = await fetch(`${base}/execute/${executeAsync ? 'async' : 'sync'}`, {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({script, args}),
   });
